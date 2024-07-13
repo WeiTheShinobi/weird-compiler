@@ -4,7 +4,9 @@ use std::io::Result;
 use std::fs::read_to_string;
 
 lalrpop_mod!(sysy);
+mod ast;
 
+use ast::*;
 fn main() -> Result<()> {
     let mut args = args();
     args.next();
@@ -17,6 +19,6 @@ fn main() -> Result<()> {
     let input = read_to_string(input)?;
     let ast = sysy::CompUnitParser::new().parse(&input).unwrap();
 
-    println!("{}", ast);
+    println!("{:#?}", ast);
     Ok(())
 }
