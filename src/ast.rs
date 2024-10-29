@@ -31,6 +31,31 @@ pub enum Exp {
 }
 
 #[derive(Debug)]
+pub enum AddExp {
+    MulExp(MulExp),
+    AddAndMul(Box<AddExp>, AddOp, MulExp),
+}
+
+#[derive(Debug)]
+pub enum AddOp {
+    Add,
+    Minus,
+}
+
+#[derive(Debug)]
+pub enum MulExp {
+    UnaryExp(UnaryExp),
+    MulAndUnary(Box<MulExp>, MulOp, UnaryExp)
+}
+
+#[derive(Debug)]
+pub enum MulOp {
+    Mul,
+    Div, 
+    Mod,
+}
+
+#[derive(Debug)]
 pub enum UnaryExp {
     PrimaryExp(PrimaryExp),
     UnaryOp(UnaryOp, Box<UnaryExp>),
@@ -47,9 +72,4 @@ pub enum UnaryOp {
     Add,
     Minus,
     Not,
-}
-
-#[derive(Debug)]
-pub struct Number {
-    pub num: i32,
 }

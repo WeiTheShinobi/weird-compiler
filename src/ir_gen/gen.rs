@@ -1,6 +1,5 @@
-use koopa::front::ast::*;
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{FunctionData, Program, Type};
+use koopa::ir::{BinaryOp, FunctionData, Program, Type, Value};
 
 use crate::ast::*;
 
@@ -22,66 +21,112 @@ impl Generate for FuncDef {
             Type::get_i32(),
         ));
         let func_data = program.func_mut(func);
+        let insts = Vec::<Value>::new();
+        let mut scope = Scope::new(func_data, insts);
 
-        let entry = func_data
+        let entry = scope.function_data
             .dfg_mut()
             .new_bb()
             .basic_block(Some("%entry".into()));
-        func_data.layout_mut().bbs_mut().extend([entry]);
+        scope.function_data.layout_mut().bbs_mut().extend([entry]);
+        self.block.stmt.eval(&mut scope);
 
-        let ret_val = func_data.dfg_mut().new_value().integer(self.block.stmt.num);
-
-        let ret = func_data.dfg_mut().new_value().ret(Some(ret_val));
-        func_data
+        scope.function_data
             .layout_mut()
             .bb_mut(entry)
             .insts_mut()
-            .extend([ret]);
+            .extend(scope.instructions);
     }
 }
 
+struct Scope<'a> {
+    function_data: &'a mut FunctionData,
+    instructions: Vec<Value>,
+}
 
 
-impl Compile for Stmt {
-    fn compile(&self, func_data: &mut FunctionData) {
+impl<'a> Scope<'a> {
+    fn new(function_data: &'a mut FunctionData, instructions: Vec<Value>) -> Self {
+        Self {
+            function_data,
+            instructions,
+        }
+    }
+
+    fn instructions_debug(&self) {
+        println!("---");
+        for &ins in &self.instructions {
+            println!("{:?}", self.function_data.dfg().value(ins));
+        }
+        println!("---");
+    }
+}
+
+trait Evaluate {
+    fn eval(&self, scope: &mut Scope) -> Option<Value>;
+}
+
+impl Evaluate for Stmt {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
         match self {
             Stmt::Return(exp) => {
-                exp.compile(func_data);
+                let return_val = exp.eval(scope);
+                let ret = scope.function_data.dfg_mut().new_value().ret(return_val);
+                scope.instructions.push(ret);
+                Some(ret)
             }
         }
     }
 }
 
-impl Compile for Exp {
-    fn compile(&self, func_data: &mut FunctionData) {
+impl Evaluate for Exp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
         match self {
-            Exp::UnaryExp(exp) => {
-                exp.compile(func_data);
-            }
+            Exp::UnaryExp(exp) => exp.eval(scope)
         }
     }
 }
 
-impl Compile for UnaryExp {
-    fn compile(&self, func_data: &mut FunctionData) {
+impl Evaluate for UnaryExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
         match self {
-            UnaryExp::PrimaryExp(primary_exp) => primary_exp.compile(func_data),
+            UnaryExp::PrimaryExp(primary_exp) => primary_exp.eval(scope),
             UnaryExp::UnaryOp(unary_op, unary_exp) => {
                 match unary_op {
-                    UnaryOp::Add => ,
-                    UnaryOp::Minus => todo!(),
-                    UnaryOp::Not => todo!(),
+                    UnaryOp::Add => unary_exp.eval(scope),
+                    UnaryOp::Minus => {
+                        let l_value = unary_exp.eval(scope).unwrap();
+                        let r_value = scope.function_data.dfg_mut().new_value().integer(0);
+                        let inst =
+                            scope.function_data
+                                .dfg_mut()
+                                .new_value()
+                                .binary(BinaryOp::Sub, r_value, l_value);
+                        scope.instructions.push(inst);
+                        Some(inst)
+                    }
+                    UnaryOp::Not => {
+                        let l_value = unary_exp.eval(scope).unwrap();
+                        let r_value = scope.function_data.dfg_mut().new_value().integer(0);
+                        let inst =
+                            scope.function_data
+                                .dfg_mut()
+                                .new_value()
+                                .binary(BinaryOp::Eq, r_value, l_value);
+                        scope.instructions.push(inst);
+                        Some(inst)
+                    }
                 }
-            },
+            }
         }
     }
 }
 
-impl Compile for PrimaryExp {
-    fn compile(&self, func_data: &mut FunctionData) {
+impl Evaluate for PrimaryExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
         match self {
-            PrimaryExp::Expression(exp) => exp.compile(func_data),
-            PrimaryExp::Number(n) => ,
+            PrimaryExp::Expression(exp) => exp.eval(scope),
+            PrimaryExp::Number(n) => Some(scope.function_data.dfg_mut().new_value().integer(*n)),
         }
     }
 }

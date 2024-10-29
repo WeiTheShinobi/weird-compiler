@@ -1,29 +1,43 @@
-use ir::entities::ValueData;
-use koopa::*;
+use entities::ValueData;
+use koopa::ir::{self, *};
 use std::{
-    io::{self, Write},
-    vec,
+    collections::HashMap, fmt::format, fs::File, io::{self, Write}, vec
 };
+use crate::riscv_gen::Result;
 
 pub struct Program {
     asm: Vec<String>,
+    writer : File,
 }
 
 impl Program {
-    pub fn new() -> Program {
-        Program { asm: vec![] }
+    pub fn new(file :File) -> Program {
+        Program { asm: vec![] , writer: file}
     }
 
-    fn write(&mut self, insts: &mut Vec<String>) {
-        self.asm.append(insts);
+    fn write(&mut self, inst: &str) {
+        self.writer.write_all(inst.as_bytes());
+        self.writer.write_all("\n".as_bytes());
     }
+}
 
-    pub fn output<W: Write>(&self, mut writer: W) -> Result<(), io::Error> {
-        for line in &self.asm {
-            writer.write_all(line.as_bytes())?;
-            writer.write_all(b"\n")?;
+struct Context {
+    counter:u32,
+    symbol_table: HashMap<Value, String>
+}
+
+impl Context {
+    fn new() -> Context {
+        Context{
+            counter: 0,
+            symbol_table: HashMap::new(),
         }
-        Ok(())
+    }
+
+    fn get_useful_register(&mut self) -> String {
+        let counter = self.counter.to_string();
+        self.counter += 1;
+        format!("t{}", counter)
     }
 }
 
@@ -33,35 +47,74 @@ pub trait GenerateAsm {
 
 impl GenerateAsm for ir::Program {
     fn generate(&self, asm: &mut Program) {
-        asm.write(&mut vec!["  .text".to_string(), "  .global".to_string()]);
+        asm.write("  .text");
+        asm.write( "  .global");
         for &func in self.func_layout() {
             let func_data = self.func(func);
-            asm.write(&mut vec![format!("{}:", func_data.name())]);
+            asm.write(format!("{}:", func_data.name()).as_str());
             func_data.generate(asm);
         }
     }
 }
 
-impl GenerateAsm for koopa::ir::FunctionData {
+impl GenerateAsm for FunctionData {
     fn generate(&self, asm: &mut Program) {
-        for (&bb, node) in self.layout().bbs() {
-            for &inst in node.insts().keys() {
-                let value_data = self.dfg().value(inst);
-                let mut value = emit(self, value_data);
-                asm.write(&mut value);
-            }
+        let mut cx = Context::new();
+        for (&_bb, node) in self.layout().bbs() {
+            let inst = *node.insts().back_key().unwrap();
+            let value_data = self.dfg().value(inst);
+            dbg!(&value_data);
+            emit(self, value_data,asm, &mut cx);
         }
     }
 }
 
-fn emit(func: &koopa::ir::FunctionData, v: &ValueData) -> Vec<String> {
+
+fn emit(func_data: &FunctionData, v: &ValueData, asm: &mut Program, cx: &mut Context) -> String {
     match v.kind() {
-        koopa::ir::ValueKind::Integer(v) => vec![v.value().to_string()],
-        koopa::ir::ValueKind::Return(v) => {
-            let value_data = func.dfg().value(v.value().unwrap());
-            let return_data = emit(func, value_data);
-            vec![format!("  li a0, {}", return_data[0]), "  ret".to_string()]
-        }
-        _ => unreachable!(),
+        ValueKind::Integer(int) => {
+            if int.value() == 0 {
+                return "x0".to_string();
+            }
+            let reg = cx.get_useful_register();
+            let immediate = int.value().to_string();
+            asm.write(format!("  li {}, {}", reg, immediate).as_str());
+            reg
+        },
+        ValueKind::Binary(binary) => {
+            let rhs_value = func_data.dfg().value(binary.rhs());
+            // dbg!(&rhs_value);
+            let lhs_value = func_data.dfg().value(binary.lhs());
+            // dbg!(&lhs_value);
+            let rhs_value = emit(func_data, rhs_value, asm, cx);
+            let lhs_value = emit(func_data, lhs_value, asm, cx);
+            
+            dbg!(binary.op());
+            match binary.op() {
+                BinaryOp::Eq => {
+                    asm.write(format!("  xor {}, {}, x0", rhs_value, rhs_value).as_str());
+                    asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
+                BinaryOp::Sub => {
+                    let reg = cx.get_useful_register();
+                    asm.write(format!("  sub {}, {}, {}", reg, lhs_value, rhs_value).as_str());
+                    reg
+                },
+                _ => unreachable!("unary op not implement"),
+            }
+        },
+        ValueKind::Return(ret) => {
+            let value_data = func_data.dfg().value(ret.value().unwrap());
+            dbg!(&value_data);
+            let return_data = emit(func_data, value_data, asm, cx);
+            if return_data != "a0".to_string() {
+                asm.write(format!("  mv a0, {}", return_data).as_str());
+            }
+            asm.write("  ret".into());
+            String::new()
+        },
+        _ => unreachable!()
     }
 }
+

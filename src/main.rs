@@ -45,9 +45,7 @@ fn try_main() -> Result<(), Error> {
         "-riscv" => {
             let output_file = File::create(output).map_err(Error::File)?;
             let koopa = ir_gen::generate_program(&ast);
-            riscv_gen::generate_riscv(koopa)
-                .output(output_file)
-                .unwrap();
+            riscv_gen::generate_riscv(koopa, output_file);
         }
         _ => {
             println!("unsupport mode: {}", mode);

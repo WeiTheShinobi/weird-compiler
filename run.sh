@@ -1,2 +1,2 @@
-cargo run -- -koopa hello.c -o hello.koopa &&
-cargo run -- -riscv hello.c -o hello.riscv
+cargo run -- -koopa unary_exp.c -o unary_exp.koopa &&
+cargo run -- -riscv unary_exp.c -o unary_exp.riscv

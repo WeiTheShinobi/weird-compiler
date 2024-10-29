@@ -25,7 +25,17 @@ Stmt: Stmt = {
 };
 
 Exp: Exp = {
-    <u:UnaryExp> => Exp::UnaryExp(u),
+    <exp:UnaryExp> => Exp::UnaryExp(exp),
+};
+
+AddExp: AddExp = {
+    <exp:UnaryExp> => AddExp::UnaryExp(exp),
+    <addExp: AddExp> <op:AddOp> <mulExp: MulExp> => AddExp::AddAndMul(addExp, op, mulExp),
+}
+
+AddOp: AddOp = {
+    "+" => AddOp::Add,
+    "-" => AddOp::Minus,
 };
 
 PrimaryExp: PrimaryExp = {
