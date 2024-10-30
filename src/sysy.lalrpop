@@ -25,18 +25,29 @@ Stmt: Stmt = {
 };
 
 Exp: Exp = {
-    <exp:UnaryExp> => Exp::UnaryExp(exp),
+    <exp:AddExp> => Exp::AddExp(exp),
 };
 
 AddExp: AddExp = {
-    <exp:UnaryExp> => AddExp::UnaryExp(exp),
-    <addExp: AddExp> <op:AddOp> <mulExp: MulExp> => AddExp::AddAndMul(addExp, op, mulExp),
-}
+    <exp:MulExp> => AddExp::MulExp(exp),
+    <add_exp: AddExp> <op:AddOp> <mul_exp: MulExp> => AddExp::AddAndMul(Box::new(add_exp), op, mul_exp),
+};
 
 AddOp: AddOp = {
     "+" => AddOp::Add,
-    "-" => AddOp::Minus,
+    "-" => AddOp::Sub,
 };
+
+MulExp: MulExp = {
+     <exp:UnaryExp> =>  MulExp::UnaryExp(exp),
+     <mul_exp: MulExp> <op: MulOp> <unary_exp: UnaryExp> => MulExp::MulAndUnary(Box::new(mul_exp), op, unary_exp)
+}
+
+MulOp: MulOp = {
+    "*" => MulOp::Mul,
+    "/" => MulOp::Div,
+    "%" => MulOp::Mod,
+}
 
 PrimaryExp: PrimaryExp = {
     "(" <e:Exp> ")" => PrimaryExp::Expression(Box::new(e)),

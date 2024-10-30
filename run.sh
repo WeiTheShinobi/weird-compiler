@@ -1,2 +1,2 @@
-cargo run -- -koopa unary_exp.c -o unary_exp.koopa &&
-cargo run -- -riscv unary_exp.c -o unary_exp.riscv
+cargo run -- -koopa arithmetic.c -o arithmetic.koopa &&
+cargo run -- -riscv arithmetic.c -o arithmetic.riscv

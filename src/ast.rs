@@ -27,7 +27,7 @@ pub enum Stmt {
 
 #[derive(Debug)]
 pub enum Exp {
-    UnaryExp(UnaryExp),
+    AddExp(AddExp),
 }
 
 #[derive(Debug)]
@@ -39,7 +39,7 @@ pub enum AddExp {
 #[derive(Debug)]
 pub enum AddOp {
     Add,
-    Minus,
+    Sub,
 }
 
 #[derive(Debug)]
