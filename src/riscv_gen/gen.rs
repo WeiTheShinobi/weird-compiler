@@ -86,8 +86,8 @@ fn emit(func_data: &FunctionData, v: &ValueData, asm: &mut Program, cx: &mut Con
             reg
         },
         ValueKind::Binary(binary) => {
-            let rhs_value = func_data.dfg().value(binary.rhs());
             let lhs_value = func_data.dfg().value(binary.lhs());
+            let rhs_value = func_data.dfg().value(binary.rhs());
             let rhs_value = emit(func_data, rhs_value, asm, cx);
             let lhs_value = emit(func_data, lhs_value, asm, cx);
  
@@ -110,6 +110,26 @@ fn emit(func_data: &FunctionData, v: &ValueData, asm: &mut Program, cx: &mut Con
                     asm.write(format!("  add {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str());
                     rhs_value
                 }
+                BinaryOp::Gt => {
+                    asm.write(format!("  sgt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str());
+                    asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
+                BinaryOp::Lt => {
+                    asm.write(format!("  slt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str());
+                    asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
+                BinaryOp::Ge => {
+                    asm.write(format!("  slt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str());
+                    asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
+                BinaryOp::Le => {
+                    asm.write(format!("  sgt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str());
+                    asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
                 _ => unreachable!("op not implement: {}", binary.op()),
             }
         },

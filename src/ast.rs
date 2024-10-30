@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 #[derive(Debug)]
 pub struct CompUnit {
     pub func_def: FuncDef,
@@ -27,7 +29,45 @@ pub enum Stmt {
 
 #[derive(Debug)]
 pub enum Exp {
+    LOrExp(LOrExp),
+}
+
+#[derive(Debug)]
+pub enum LOrExp {
+    LAndExp(LAndExp),
+    LOrExp(Box<LOrExp>, LAndExp),
+}
+
+#[derive(Debug)]
+pub enum LAndExp {
+    EqExp(EqExp),
+    LAndExp(Box<LAndExp>, EqExp)
+}
+
+#[derive(Debug)]
+pub enum EqExp {
+    RelExp(RelExp),
+    EqExp(Box<EqExp>, EqOp, RelExp),
+}
+
+#[derive(Debug)]
+pub enum EqOp {
+    Eq,
+    NotEq,
+}
+
+#[derive(Debug)]
+pub enum RelExp {
     AddExp(AddExp),
+    RelExp(Box<RelExp>, RelOp, AddExp),
+}
+
+#[derive(Debug)]
+pub enum RelOp {
+    Gt,
+    Lt,
+    Ge,
+    Le,
 }
 
 #[derive(Debug)]

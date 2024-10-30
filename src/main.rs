@@ -112,6 +112,7 @@ mod test {
             (path("hello", ".koopa")),
             (path("unary_exp", ".koopa")),
             (path("arithmetic", ".koopa")),
+            (path("logic", ".koopa")),
         ];
 
         for test_cases in test_cases {
@@ -141,6 +142,7 @@ mod test {
             // (path("hello", ".riscv")),
             (path("unary_exp", ".riscv")),
             (path("arithmetic", ".riscv")),
+            (path("logic", ".riscv")),
         ];
 
         for test_cases in test_cases {

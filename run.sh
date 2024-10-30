@@ -1,2 +1,2 @@
-cargo run -- -koopa arithmetic.c -o arithmetic.koopa &&
-cargo run -- -riscv arithmetic.c -o arithmetic.riscv
+cargo run -- -koopa logic.c -o logic.koopa &&
+cargo run -- -riscv logic.c -o logic.riscv

@@ -1,3 +1,4 @@
+use std::collections::binary_heap;
 use std::ops::Add;
 
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
@@ -85,7 +86,94 @@ impl Evaluate for Stmt {
 impl Evaluate for Exp {
     fn eval(&self, scope: &mut Scope) -> Option<Value> {
         match self {
-            Exp::AddExp(exp) => exp.eval(scope),
+            Exp::LOrExp(exp) => exp.eval(scope),
+        }
+    }
+}
+
+impl Evaluate for LOrExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
+        match self {
+            LOrExp::LAndExp(land_exp) => land_exp.eval(scope),
+            LOrExp::LOrExp(lor_exp, land_exp) => {
+                let lhs = lor_exp.eval(scope).unwrap();
+                let rhs = land_exp.eval(scope).unwrap();
+                let inst = scope
+                    .function_data
+                    .dfg_mut()
+                    .new_value()
+                    .binary(BinaryOp::Or, lhs, rhs);
+                scope.instructions.push(inst);
+                Some(inst)
+            }
+        }
+    }
+}
+
+impl Evaluate for LAndExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
+        match self {
+            LAndExp::EqExp(eq_exp) => eq_exp.eval(scope),
+            LAndExp::LAndExp(land_exp, eq_exp) => {
+                let lhs = land_exp.eval(scope).unwrap();
+                let rhs = eq_exp.eval(scope).unwrap();
+                let inst =
+                    scope
+                        .function_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::And, lhs, rhs);
+                scope.instructions.push(inst);
+                Some(inst)
+            }
+        }
+    }
+}
+
+impl Evaluate for EqExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
+        match self {
+            EqExp::RelExp(rel_exp) => rel_exp.eval(scope),
+            EqExp::EqExp(eq_exp, eq_op, rel_exp) => {
+                let lhs = eq_exp.eval(scope).unwrap();
+                let rhs = rel_exp.eval(scope).unwrap();
+                let op = match eq_op {
+                    EqOp::Eq => BinaryOp::Eq,
+                    EqOp::NotEq => BinaryOp::NotEq,
+                };
+                let inst = scope
+                    .function_data
+                    .dfg_mut()
+                    .new_value()
+                    .binary(op, lhs, rhs);
+                scope.instructions.push(inst);
+                Some(inst)
+            }
+        }
+    }
+}
+
+impl Evaluate for RelExp {
+    fn eval(&self, scope: &mut Scope) -> Option<Value> {
+        match self {
+            RelExp::AddExp(add_exp) => add_exp.eval(scope),
+            RelExp::RelExp(rel_exp, rel_op, add_exp) => {
+                let lhs = rel_exp.eval(scope).unwrap();
+                let rhs = add_exp.eval(scope).unwrap();
+                let op = match rel_op {
+                    RelOp::Gt => BinaryOp::Gt,
+                    RelOp::Lt => BinaryOp::Lt,
+                    RelOp::Ge => BinaryOp::Ge,
+                    RelOp::Le => BinaryOp::Le,
+                };
+                let inst = scope
+                    .function_data
+                    .dfg_mut()
+                    .new_value()
+                    .binary(op, lhs, rhs);
+                scope.instructions.push(inst);
+                Some(inst)
+            },
         }
     }
 }

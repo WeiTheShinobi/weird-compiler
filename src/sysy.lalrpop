@@ -25,8 +25,40 @@ Stmt: Stmt = {
 };
 
 Exp: Exp = {
-    <exp:AddExp> => Exp::AddExp(exp),
+    <exp:LOrExp> => Exp::LOrExp(exp),
 };
+
+LOrExp: LOrExp = {
+    <exp: LAndExp> => LOrExp::LAndExp(exp),
+    <lor_exp: LOrExp> "||" <land_exp: LAndExp> => LOrExp::LOrExp(Box::new(lor_exp), land_exp),
+}
+
+LAndExp: LAndExp = {
+    <exp: EqExp> => LAndExp::EqExp(exp),
+    <land_exp: LAndExp> "&&" <eq_exp: EqExp> => LAndExp::LAndExp(Box::new(land_exp), eq_exp),
+}
+
+EqExp: EqExp = {
+    <rel_exp: RelExp> => EqExp::RelExp(rel_exp),
+    <eq_exp: EqExp> <op: EqOp> <rel_exp: RelExp> => EqExp::EqExp(Box::new(eq_exp), op, rel_exp),
+}
+
+EqOp: EqOp = {
+    "==" => EqOp::Eq,
+    "!=" => EqOp::NotEq,
+}
+
+RelExp: RelExp = {
+    <add_exp: AddExp> => RelExp::AddExp(add_exp),
+    <rel_exp: RelExp> <op: RelOp> <add_exp: AddExp> => RelExp::RelExp(Box::new(rel_exp), op, add_exp),
+}
+
+RelOp: RelOp = {
+    "<" => RelOp::Lt,
+    ">" => RelOp::Gt,
+    "<=" => RelOp::Le,
+    ">=" => RelOp::Gt,
+}
 
 AddExp: AddExp = {
     <exp:MulExp> => AddExp::MulExp(exp),
