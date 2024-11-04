@@ -14,13 +14,52 @@ FuncDef: FuncDef = {
     <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
         FuncDef{ <> }
     }
-}
+};
 
 FuncType: FuncType = "int" => FuncType::Int;
 
-Block: Block = "{" <stmt: Stmt> "}" => Block{ <> };
+Decl: Decl = {
+    <decl: ConstDecl> => Decl::ConstDecl(decl),
+    <decl: VarDecl> => Decl::VarDecl(decl),
+};
+
+ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValue<ConstDef>> ";" => ConstDecl{ <> };
+
+VarDecl: VarDecl = <btype: BType> <defs: VectorValue<VarDef>> ";" => VarDecl{ <> };
+
+VarDef: VarDef = {
+    <id: Ident> => VarDef::Id(<>), 
+    <id: Ident> "=" <init_val: InitVal> => VarDef::Assign(<>),
+};
+
+InitVal: InitVal = <exp: Exp> => InitVal{ <> };
+
+VectorValue<T>: Vec<T> = {
+    <mut v:(<T>)+> <mut e: ("," <T>)*> => {
+        v.append(&mut e);
+        v
+    }
+};
+
+BType: BType = "int" => BType::Int;
+
+ConstDef: ConstDef = <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef{ <> };
+
+ConstInitVal: ConstInitVal = <exp: ConstExp> => ConstInitVal::ConstExp(<>); 
+
+ConstExp: ConstExp = <exp: Exp> => ConstExp::Exp(<>);
+
+Block: Block = "{" <block_item:(<BlockItem>)*> "}" => Block{ <> };
+
+BlockItem: BlockItem = {
+    <decl: Decl> => BlockItem::Decl(<>),
+    <stmt: Stmt> => BlockItem::Stmt(<>),
+}
+
+LVal: LVal = <ident: Ident> => LVal{ <> };
 
 Stmt: Stmt = {
+    <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(<>),
     "return" <e:Exp> ";" => Stmt::Return(e),
 };
 
@@ -83,6 +122,7 @@ MulOp: MulOp = {
 
 PrimaryExp: PrimaryExp = {
     "(" <e:Exp> ")" => PrimaryExp::Expression(Box::new(e)),
+    <lval: LVal> => PrimaryExp::LVal(<>),
     <n:Number> => PrimaryExp::Number(n),
 };
 

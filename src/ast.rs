@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 #[derive(Debug)]
 pub struct CompUnit {
     pub func_def: FuncDef,
@@ -19,11 +17,68 @@ pub enum FuncType {
 
 #[derive(Debug)]
 pub struct Block {
-    pub stmt: Stmt,
+    pub block_item: Vec<BlockItem>,
+}
+
+#[derive(Debug)]
+pub enum BlockItem {
+    Decl(Decl),
+    Stmt(Stmt),
+}
+
+#[derive(Debug)]
+pub enum Decl {
+    ConstDecl(ConstDecl),
+    VarDecl(VarDecl),
+}
+
+#[derive(Debug)]
+pub struct VarDecl {
+    pub btype :BType,
+    pub defs: Vec<VarDef>,
+}
+
+#[derive(Debug)]
+pub enum VarDef {
+    Id(String),
+    Assign(String, InitVal),
+}
+
+#[derive(Debug)]
+pub struct InitVal {
+    pub exp: Exp,
+}
+
+#[derive(Debug)]
+pub struct ConstDecl {
+    pub btype: BType,
+    pub defs: Vec<ConstDef>,
+}
+
+#[derive(Debug)]
+pub enum BType {
+    Int,
+}
+
+#[derive(Debug)]
+pub struct ConstDef {
+    pub ident: String,
+    pub const_init_val: ConstInitVal,
+}
+
+#[derive(Debug)]
+pub enum ConstInitVal {
+    ConstExp(ConstExp),
+}
+
+#[derive(Debug)]
+pub enum ConstExp {
+    Exp(Exp),
 }
 
 #[derive(Debug)]
 pub enum Stmt {
+    Assign(LVal, Exp),
     Return(Exp),
 }
 
@@ -41,7 +96,7 @@ pub enum LOrExp {
 #[derive(Debug)]
 pub enum LAndExp {
     EqExp(EqExp),
-    LAndExp(Box<LAndExp>, EqExp)
+    LAndExp(Box<LAndExp>, EqExp),
 }
 
 #[derive(Debug)]
@@ -85,13 +140,13 @@ pub enum AddOp {
 #[derive(Debug)]
 pub enum MulExp {
     UnaryExp(UnaryExp),
-    MulAndUnary(Box<MulExp>, MulOp, UnaryExp)
+    MulAndUnary(Box<MulExp>, MulOp, UnaryExp),
 }
 
 #[derive(Debug)]
 pub enum MulOp {
     Mul,
-    Div, 
+    Div,
     Mod,
 }
 
@@ -104,7 +159,13 @@ pub enum UnaryExp {
 #[derive(Debug)]
 pub enum PrimaryExp {
     Expression(Box<Exp>),
+    LVal(LVal),
     Number(i32),
+}
+
+#[derive(Debug)]
+pub struct LVal {
+    pub ident: String,
 }
 
 #[derive(Debug)]

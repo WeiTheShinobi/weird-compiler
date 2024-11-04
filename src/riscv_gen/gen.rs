@@ -97,6 +97,11 @@ fn emit(func_data: &FunctionData, v: &ValueData, asm: &mut Program, cx: &mut Con
                     asm.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
                     rhs_value
                 },
+                BinaryOp::NotEq => {
+                    asm.write(format!("  xor {}, {}, x0", rhs_value, rhs_value).as_str());
+                    asm.write(format!("  snez {}, {}", rhs_value, rhs_value).as_str());
+                    rhs_value
+                },
                 BinaryOp::Sub => {
                     let reg = cx.get_useful_register();
                     asm.write(format!("  sub {}, {}, {}", reg, lhs_value, rhs_value).as_str());

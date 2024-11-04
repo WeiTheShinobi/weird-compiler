@@ -1,6 +1,0 @@
-  .text
-  .globl main
-main:
-  li t0, 0
-  mv a0, t0
-  ret

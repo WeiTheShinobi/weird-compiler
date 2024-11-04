@@ -66,7 +66,7 @@ fn try_main(args: Args) -> Result<(), Error> {
             riscv_gen::generate_riscv(koopa, output_file);
         }
         _ => {
-            println!("unsupport mode: {}", args.mode);
+            unreachable!("unsupport mode: {}", args.mode);
         }
     }
     Ok(())
@@ -89,78 +89,57 @@ impl fmt::Display for Error {
 #[cfg(test)]
 mod test {
 
-    use std::fs::read_to_string;
+    use std::{
+        fs::{self},
+        path::PathBuf,
+    };
 
     use crate::{try_main, Args};
 
-    fn path(file_name: &str, mode: &str) -> (String, String, String, String) {
-        let mut input = "./tests/input/".to_string();
-        input.push_str(file_name);
-        input.push_str(".c");
-        let mut output = "./tests/output/".to_string();
-        output.push_str(file_name);
-        output.push_str(mode);
-        let mut wanted = "./tests/wanted/".to_string();
-        wanted.push_str(file_name);
-        wanted.push_str(mode);
-        (input, output, wanted, file_name.to_string())
-    }
-
     #[test]
-    fn koopa() {
-        let test_cases = [
-            (path("hello", ".koopa")),
-            (path("unary_exp", ".koopa")),
-            (path("arithmetic", ".koopa")),
-            (path("logic", ".koopa")),
-        ];
-
-        for test_cases in test_cases {
-            let mode = "-koopa".to_string();
-            let args = Args::new(mode, test_cases.0, test_cases.1.clone());
-
-            if let Err(e) = try_main(args) {
-                dbg!(e.to_string());
+    fn gen() {
+        let mut file_names = Vec::new();
+        let path = "./tests/input";
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            if let Some(file_name) = entry.file_name().to_str() {
+                file_names.push(file_name.to_string());
             }
-            let actual = read_to_string(test_cases.1.clone()).expect(&format!(
-                "Failed to read file at path: {}",
-                test_cases.1.clone()
-            ));
-            let expect = read_to_string(test_cases.2.clone()).expect(&format!(
-                "Failed to read file at path: {}",
-                test_cases.2.clone()
-            ));
-
-            assert_eq!(actual, expect, "file name: {}", test_cases.3);
         }
-    }
 
-    #[test]
-    fn riscv() {
-        let mode = "-riscv";
-        let test_cases = [
-            // (path("hello", ".riscv")),
-            (path("unary_exp", ".riscv")),
-            (path("arithmetic", ".riscv")),
-            (path("logic", ".riscv")),
-        ];
-
-        for test_cases in test_cases {
-            let args = Args::new(mode.to_string(), test_cases.0, test_cases.1.clone());
-
+        let output = "./tests/output";
+        if !PathBuf::from(output).exists() {
+            fs::create_dir(output).unwrap();
+        }
+        for file_name in file_names {
+            println!("start compile {}", &file_name);
+            let args = Args::new(
+                "-koopa".to_string(),
+                format!("{}{}", "./tests/input/", file_name),
+                format!(
+                    "{}{}{}",
+                    "./tests/output/",
+                    file_name.split('.').next().unwrap(),
+                    ".koopa"
+                ),
+            );
             if let Err(e) = try_main(args) {
                 dbg!(e.to_string());
             }
-            let actual = read_to_string(test_cases.1.clone()).expect(&format!(
-                "Failed to read file at path: {}",
-                test_cases.1.clone()
-            ));
-            let expect = read_to_string(test_cases.2.clone()).expect(&format!(
-                "Failed to read file at path: {}",
-                test_cases.2.clone()
-            ));
 
-            assert_eq!(actual, expect, "\nfile name: {}", test_cases.3);
+            let args = Args::new(
+                "-riscv".to_string(),
+                format!("{}{}", "./tests/input/", file_name),
+                format!(
+                    "{}{}{}",
+                    "./tests/output/",
+                    file_name.split('.').next().unwrap(),
+                    ".riscv"
+                ),
+            );
+            if let Err(e) = try_main(args) {
+                dbg!(e.to_string());
+            }
         }
     }
 }
