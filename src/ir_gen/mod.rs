@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread::scope};
+use std::collections::HashMap;
 
 use koopa::ir::{Program, Value};
 
@@ -11,12 +11,21 @@ mod gen;
 mod scope;
 mod eval;
 
-pub fn generate_program(comp_unit: &CompUnit) -> Program {
+#[derive(Debug)]
+pub enum Error {
+    Error(String),
+    ReassignConst,
+    Undefine,
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub fn generate_program(comp_unit: &CompUnit) -> Result<Program> {
     let mut program = Program::new();
     
     let insts = Vec::<Value>::new();
     let mut scope = Scope::new(None, insts, HashMap::new());
 
-    comp_unit.generate(&mut program, &mut scope);
-    program
+    comp_unit.generate(&mut program, &mut scope)?;
+    Ok(program)
 }

@@ -1,9 +1,8 @@
 use entities::ValueData;
 use koopa::ir::{self, *};
 use std::{
-    collections::HashMap, fmt::format, fs::File, io::{self, Write}, vec
+    collections::HashMap, fs::File, io::Write, vec
 };
-use crate::riscv_gen::Result;
 
 pub struct Program {
     asm: Vec<String>,

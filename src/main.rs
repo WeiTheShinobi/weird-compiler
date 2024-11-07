@@ -1,5 +1,5 @@
 use std::env::args;
-use std::fmt;
+use std::fmt::{self, write};
 
 use std::fs::{read_to_string, File};
 
@@ -55,26 +55,29 @@ fn try_main(args: Args) -> Result<(), Error> {
     match args.mode.as_str() {
         "-koopa" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
-            let program = ir_gen::generate_program(&ast);
+            let program = ir_gen::generate_program(&ast).map_err(|e| Error::KoopaGen(e))?;
             KoopaGenerator::new(output_file)
                 .generate_on(&program)
                 .unwrap();
+            Ok(())
         }
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
-            let koopa = ir_gen::generate_program(&ast);
+            let koopa = ir_gen::generate_program(&ast).map_err(|e| Error::RiscvGen)?;
             riscv_gen::generate_riscv(koopa, output_file);
+            Ok(())
         }
         _ => {
             unreachable!("unsupport mode: {}", args.mode);
         }
     }
-    Ok(())
 }
 
 enum Error {
     File(io::Error),
     Parse,
+    KoopaGen(ir_gen::Error),
+    RiscvGen,
 }
 
 impl fmt::Display for Error {
@@ -82,64 +85,99 @@ impl fmt::Display for Error {
         match self {
             Self::Parse => write!(f, "error occurred while parsing"),
             Self::File(err) => write!(f, "invalid input SysY file: {}", err),
+            Self::KoopaGen(err) => write!(f, "koopa gen error: {:?}", err),
+            Self::RiscvGen => write!(f, "gen isa error"),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    macro_rules! test_koopa {
+        ($file_name: ident) => {
+            #[test]
+            fn $file_name() {
+                let file_name = stringify!($file_name);
+                if !PathBuf::from("./tests/output").exists() {
+                    fs::create_dir("./tests/output").unwrap();
+                }
 
-    use std::{
-        fs::{self},
-        path::PathBuf,
-    };
+                let old_koopa = format!("./tests/output/{}{}", file_name, ".koopa");
+                if PathBuf::from(&old_koopa).exists() {
+                    fs::remove_file(&old_koopa).unwrap();
+                }
 
-    use crate::{try_main, Args};
-
-    #[test]
-    fn gen() {
-        let mut file_names = Vec::new();
-        let path = "./tests/input";
-        for entry in fs::read_dir(path).unwrap() {
-            let entry = entry.unwrap();
-            if let Some(file_name) = entry.file_name().to_str() {
-                file_names.push(file_name.to_string());
+                println!("start compile {}", &file_name);
+                let args = Args::new(
+                    "-koopa".to_string(),
+                    format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    format!("{}{}{}", "./tests/output/", file_name, ".koopa"),
+                );
+                println!("koopa {}", file_name);
+                if let Err(e) = try_main(args) {
+                    dbg!(e.to_string());
+                }
             }
-        }
+        };
+    }
 
-        let output = "./tests/output";
-        if !PathBuf::from(output).exists() {
-            fs::create_dir(output).unwrap();
-        }
-        for file_name in file_names {
-            println!("start compile {}", &file_name);
-            let args = Args::new(
-                "-koopa".to_string(),
-                format!("{}{}", "./tests/input/", file_name),
-                format!(
-                    "{}{}{}",
-                    "./tests/output/",
-                    file_name.split('.').next().unwrap(),
-                    ".koopa"
-                ),
-            );
-            if let Err(e) = try_main(args) {
-                dbg!(e.to_string());
-            }
+    macro_rules! test_riscv {
+        ($file_name: ident) => {
+            #[test]
+            fn $file_name() {
+                let file_name = stringify!($file_name);
+                if !PathBuf::from("./tests/output").exists() {
+                    fs::create_dir("./tests/output").unwrap();
+                }
 
-            let args = Args::new(
-                "-riscv".to_string(),
-                format!("{}{}", "./tests/input/", file_name),
-                format!(
-                    "{}{}{}",
-                    "./tests/output/",
-                    file_name.split('.').next().unwrap(),
-                    ".riscv"
-                ),
-            );
-            if let Err(e) = try_main(args) {
-                dbg!(e.to_string());
+                let old_riscv = format!("./tests/output/{}{}", file_name, ".riscv");
+                if PathBuf::from(&old_riscv).exists() {
+                    fs::remove_file(&old_riscv).unwrap();
+                }
+
+                let args = Args::new(
+                    "-riscv".to_string(),
+                    format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    format!("{}{}{}", "./tests/output/", file_name, ".riscv"),
+                );
+                println!("riscv {}", file_name);
+                if let Err(e) = try_main(args) {
+                    dbg!(e.to_string());
+                }
             }
-        }
+        };
+    }
+
+    mod koopa {
+        use crate::{try_main, Args};
+        use std::{
+            fs::{self},
+            path::PathBuf,
+        };
+
+        test_koopa!(arithmetic);
+        test_koopa!(const_decl);
+        test_koopa!(hello);
+        test_koopa!(land);
+        test_koopa!(logic);
+        test_koopa!(lor);
+        test_koopa!(unary_exp);
+        test_koopa!(var);
+    }
+    mod riscv {
+        use crate::{try_main, Args};
+        use std::{
+            fs::{self},
+            path::PathBuf,
+        };
+
+        test_riscv!(arithmetic);
+        test_riscv!(const_decl);
+        test_riscv!(hello);
+        test_riscv!(land);
+        test_riscv!(logic);
+        test_riscv!(lor);
+        test_riscv!(unary_exp);
+        test_riscv!(var);
     }
 }
