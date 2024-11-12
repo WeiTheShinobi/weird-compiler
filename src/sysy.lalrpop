@@ -96,7 +96,7 @@ RelOp: RelOp = {
     "<" => RelOp::Lt,
     ">" => RelOp::Gt,
     "<=" => RelOp::Le,
-    ">=" => RelOp::Gt,
+    ">=" => RelOp::Ge,
 }
 
 AddExp: AddExp = {

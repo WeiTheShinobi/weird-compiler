@@ -4,6 +4,7 @@ use gen::*;
 
 mod gen;
 
+#[derive(Debug)]
 pub enum Error {
     
 }

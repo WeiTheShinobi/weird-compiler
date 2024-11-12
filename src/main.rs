@@ -55,7 +55,7 @@ fn try_main(args: Args) -> Result<(), Error> {
     match args.mode.as_str() {
         "-koopa" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
-            let program = ir_gen::generate_program(&ast).map_err(|e| Error::KoopaGen(e))?;
+            let program = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
             KoopaGenerator::new(output_file)
                 .generate_on(&program)
                 .unwrap();
@@ -63,7 +63,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         }
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
-            let koopa = ir_gen::generate_program(&ast).map_err(|e| Error::RiscvGen)?;
+            let koopa = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
             riscv_gen::generate_riscv(koopa, output_file);
             Ok(())
         }
@@ -77,7 +77,7 @@ enum Error {
     File(io::Error),
     Parse,
     KoopaGen(ir_gen::Error),
-    RiscvGen,
+    RiscvGen(riscv_gen::Error),
 }
 
 impl fmt::Display for Error {
@@ -86,7 +86,7 @@ impl fmt::Display for Error {
             Self::Parse => write!(f, "error occurred while parsing"),
             Self::File(err) => write!(f, "invalid input SysY file: {}", err),
             Self::KoopaGen(err) => write!(f, "koopa gen error: {:?}", err),
-            Self::RiscvGen => write!(f, "gen isa error"),
+            Self::RiscvGen(err) => write!(f, "gen isa error: {:?}", err),
         }
     }
 }
@@ -163,6 +163,8 @@ mod test {
         test_koopa!(lor);
         test_koopa!(unary_exp);
         test_koopa!(var);
+        test_koopa!(var2);
+        test_koopa!(block);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -179,5 +181,7 @@ mod test {
         test_riscv!(lor);
         test_riscv!(unary_exp);
         test_riscv!(var);
+        test_riscv!(var2);
+        test_riscv!(block);
     }
 }

@@ -1,8 +1,27 @@
-use entities::ValueData;
 use koopa::ir::{self, *};
-use std::arch::asm;
-use std::fmt::{format, Pointer};
 use std::{collections::HashMap, fs::File, io::Write, vec};
+
+macro_rules! write_inst {
+    ($program:expr, $action: expr, $($values:expr), *) => {
+        $program.write(
+            format!(
+                "  {} {}",
+                $action,
+                vec![$(format!("{}", $values)),+].join(", ")
+            )
+            .as_str(),
+        )
+    };
+    ($program:expr, $action: expr) => {
+        $program.write(
+            format!(
+                "  {}",
+                $action
+            )
+            .as_str(),
+        )
+    };
+}
 
 pub struct Program {
     asm: Vec<String>,
@@ -21,16 +40,29 @@ impl Program {
         self.writer.write_all(inst.as_bytes());
         self.writer.write_all("\n".as_bytes());
     }
+
+    fn newline(&mut self) {
+        self.write("");
+    }
 }
 
 #[derive(Clone, Debug)]
-struct AsmValue {
-    position: String,
-    is_pointer: bool,
+enum AsmValue {
+    Const(i32),
+    Value(String),
+}
+
+impl AsmValue {
+    fn load_to(&self, program: &mut Program, reg: &str) {
+        match self {
+            AsmValue::Const(int) => write_inst!(program, "li", reg, int),
+            AsmValue::Value(pos) => write_inst!(program, "lw", reg, pos),
+        }
+    }
 }
 struct Context {
     stack_size: usize,
-    stack_pointer: usize,
+    stack_used_size: usize,
     symbol_table: HashMap<Value, AsmValue>,
 }
 
@@ -38,16 +70,21 @@ impl Context {
     fn new() -> Context {
         Context {
             stack_size: 0,
-            stack_pointer: 0,
+            stack_used_size: 0,
             symbol_table: HashMap::new(),
         }
     }
 
     fn get_useful_space(&mut self, size: usize) -> String {
-        let start_pos = self.stack_pointer;
-        self.stack_pointer += size;
+        let start_pos = self.stack_used_size;
+        self.stack_used_size += size;
 
-        assert!(self.stack_pointer <= self.stack_size, "{}, {}", self.stack_pointer, self.stack_size);
+        assert!(
+            self.stack_used_size <= self.stack_size,
+            "{}, {}",
+            self.stack_used_size,
+            self.stack_size
+        );
         format!("{}(sp)", start_pos)
     }
 
@@ -89,11 +126,21 @@ impl GenerateAsm for FunctionData {
 
         prologue(program, &cx);
         for (&_bb, node) in self.layout().bbs() {
-            for &value in node.insts().keys() {            
+            for &value in node.insts().keys() {
                 emit(self, value, program, &mut cx);
-                program.write("");
+                program.newline();
             }
         }
+    }
+}
+
+#[inline]
+fn stack_size(ty: &Type) -> usize {
+    match ty.kind() {
+        TypeKind::Int32 | TypeKind::Unit => ty.size(),
+        TypeKind::Array(_, _) => todo!(),
+        TypeKind::Pointer(val) => val.size(),
+        TypeKind::Function(_, _) => todo!(),
     }
 }
 
@@ -103,8 +150,9 @@ fn calculate_stack_size(function_data: &FunctionData) -> usize {
         for &inst in node.insts().keys() {
             let value_data = function_data.dfg().value(inst);
             match value_data.kind() {
-                ValueKind::Alloc(_) => size += value_data.ty().size(),
-                ValueKind::Load(_) => size += value_data.ty().size(),
+                ValueKind::Alloc(_) => size += stack_size(value_data.ty()),
+                ValueKind::Load(_) => size += stack_size(value_data.ty()),
+                ValueKind::Binary(_) => size += stack_size(value_data.ty()),
                 _ => (),
             }
         }
@@ -116,154 +164,132 @@ fn calculate_stack_size(function_data: &FunctionData) -> usize {
     }
 }
 fn prologue(program: &mut Program, cx: &Context) {
-    program.write("  # prologue");
+    if cx.stack_size == 0 {
+        return;
+    }
+    write_inst!(program, "# prolugue");
     // addi -> 2^12 [-2048, 2047]
     if cx.stack_size < 2047 {
-        program.write(format!("  addi sp sp -{}", cx.stack_size).as_str());
+        program.write(format!("  addi sp, sp, -{}", cx.stack_size).as_str());
     } else {
-        program.write(format!("  li t0 -{}", cx.stack_size).as_str());
-        program.write("  add sp sp t0");
+        program.write(format!("  li t0, -{}", cx.stack_size).as_str());
+        program.write("  add sp, sp, t0");
     }
-    program.write("");
+    program.newline();
 }
 
 fn epilogue(program: &mut Program, cx: &Context) {
+    if cx.stack_size == 0 {
+        return;
+    }
     program.write("  # epilogue");
     // addi -> 2^12 [-2048, 2047]
     if cx.stack_size < 2047 {
-        program.write(format!("  addi sp sp {}", cx.stack_size).as_str());
+        write_inst!(program, "addi", "sp", "sp", cx.stack_size);
     } else {
-        program.write(format!("  li t0 {}", cx.stack_size).as_str());
-        program.write("  add sp sp t0");
+        write_inst!(program, "li", "t0", cx.stack_size);
+        write_inst!(program, "add", "sp", "sp", "t0");
     }
-    program.write("");
 }
 
 fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut Context) {
     let value_data = func_data.dfg().value(value);
-    
+
     dbg!(value_data);
     match value_data.kind() {
         ValueKind::Integer(int) => {
-            let imm = int.value().to_string();
-            program.write(format!("  li t0, {}", imm).as_str());
-            cx.set_symbol(
-                value,
-                AsmValue {
-                    position: "t0".to_string(),
-                    is_pointer: false,
-                },
-            );
+            let imm = int.value();
+            cx.set_symbol(value, AsmValue::Const(imm));
         }
         ValueKind::Binary(binary) => {
             program.write("  # binary");
             if let None = cx.get_symbol(&binary.lhs()) {
                 emit(func_data, binary.lhs(), program, cx);
             }
-            let lhs_value = cx.get_symbol(&binary.lhs()).unwrap().clone().position;
+            let lhs_value = cx.get_symbol(&binary.lhs()).unwrap().clone();
+            lhs_value.load_to(program, "t0");
             if let None = cx.get_symbol(&binary.rhs()) {
                 emit(func_data, binary.rhs(), program, cx);
             }
-            let rhs_value = cx.get_symbol(&binary.rhs()).unwrap().clone().position;
+            let rhs_value = cx.get_symbol(&binary.rhs()).unwrap().clone();
+            rhs_value.load_to(program, "t1");
 
             match binary.op() {
                 BinaryOp::Eq => {
-                    program.write(
-                        format!("  sub {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "sub", "t0", "t0", "t1");
+                    write_inst!(program, "seqz", "t0", "t0");
                 }
                 BinaryOp::NotEq => {
-                    program.write(
-                        format!("  sub {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  snez {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "sub", "t0", "t0", "t1");
+                    write_inst!(program, "snez", "t0", "t0");
                 }
-                BinaryOp::Sub => {
-                    program.write(
-                        format!("  sub {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                }
-                BinaryOp::Mul => {
-                    program.write(
-                        format!("  mul {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                }
-                BinaryOp::Add => {
-                    program.write(
-                        format!("  add {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                }
+                BinaryOp::Sub => write_inst!(program, "sub", "t0", "t0", "t1"),
+                BinaryOp::Mul => write_inst!(program, "mul", "t0", "t0", "t1"),
+                BinaryOp::Add => write_inst!(program, "add", "t0", "t0", "t1"),
                 BinaryOp::Gt => {
-                    program.write(
-                        format!("  sgt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "sgt", "t0", "t0", "t1");
+                    write_inst!(program, "snez", "t0", "t0");
                 }
                 BinaryOp::Lt => {
-                    program.write(
-                        format!("  slt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "slt", "t0", "t0", "t1");
+                    write_inst!(program, "snez", "t0", "t0");
                 }
                 BinaryOp::Ge => {
-                    program.write(
-                        format!("  slt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "slt", "t0", "t0", "t1");
+                    write_inst!(program, "snez", "t0", "t0");
                 }
                 BinaryOp::Le => {
-                    program.write(
-                        format!("  sgt {}, {}, {}", rhs_value, lhs_value, rhs_value).as_str(),
-                    );
-                    program.write(format!("  seqz {}, {}", rhs_value, rhs_value).as_str());
+                    write_inst!(program, "sgt", "t0", "t0", "t1");
+                    write_inst!(program, "snez", "t0", "t0");
                 }
                 _ => unimplemented!("op: {}", binary.op()),
             }
-            cx.set_symbol(value, AsmValue{
-                position: "t0".to_string(),
-                is_pointer: false,
-            });
+
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+            program.write(format!("  sw t0, {}", pos).as_str());
+            cx.set_symbol(value, AsmValue::Value(pos));
         }
-        ValueKind::Alloc(alloc) => {
-            program.write("  # alloc");
-            let pos = cx.get_useful_space(value_data.ty().size());
-            cx.symbol_table.insert(
-                value,
-                AsmValue {
-                    position: pos,
-                    is_pointer: true,
-                },
-            );
+        ValueKind::Alloc(_) => {
+            write_inst!(program, "# alloc");
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+            cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Load(load) => {
-            program.write("  # load");
-            let load = cx.symbol_table.get(&load.src()).unwrap();
-            program.write(format!("  lw t0, {}", load.position).as_str());
-            program.write(format!("  sw t0, {}(sp) ", cx.stack_pointer).as_str());
-            cx.stack_pointer += value_data.ty().size();
+            write_inst!(program, "# load");
+            cx.get_symbol(&load.src()).unwrap().load_to(program, "t0");
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+
+            write_inst!(program, "sw", "t0", &pos);
+            cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Store(store) => {
-            program.write("  # store");
+            write_inst!(program, "# store");
+
             if let None = cx.get_symbol(&store.value()) {
                 emit(func_data, store.value(), program, cx);
             }
-            let value = cx.get_symbol(&store.value()).unwrap().clone();
+            cx.get_symbol(&store.value())
+                .unwrap()
+                .clone()
+                .load_to(program, "t0");
+
             if let None = cx.get_symbol(&store.dest()) {
                 emit(func_data, store.dest(), program, cx);
             }
-            let dest = cx.get_symbol(&store.dest()).unwrap().clone();
-
-            program.write(format!("  lw t0, {}", value.position).as_str());
-            program.write(format!("  sw t0, {}", dest.position).as_str());
+            if let AsmValue::Value(dest) = cx.get_symbol(&store.dest()).unwrap().clone() {
+                write_inst!(program, "sw", "t0", dest);
+            }
         }
         ValueKind::Return(ret) => {
+            write_inst!(program, "# return");
             if let Some(ret_val) = ret.value() {
-                let ret_val_data = cx.get_symbol(&ret_val).unwrap();
-                program.write(format!("lw a0, {}", ret_val_data.position).as_str());
+                if let None = cx.get_symbol(&ret_val) {
+                    emit(func_data, ret_val, program, cx);
+                }
+                cx.get_symbol(&ret_val).unwrap().load_to(program, "a0")
             }
             epilogue(program, cx);
-            program.write("  ret");
+            write_inst!(program, "ret");
         }
         _ => unimplemented!("{:?}", value_data),
     }
