@@ -60,7 +60,9 @@ LVal: LVal = <ident: Ident> => LVal{ <> };
 
 Stmt: Stmt = {
     <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(<>),
-    "return" <e:Exp> ";" => Stmt::Return(e),
+    <exp: Exp?> ";" => Stmt::Exp(<>),
+    <block: Block> => Stmt::Block(<>),
+    "return" <e:Exp?> ";" => Stmt::Return(<>),
 };
 
 Exp: Exp = {

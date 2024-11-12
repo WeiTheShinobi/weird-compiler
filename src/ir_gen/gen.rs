@@ -235,11 +235,17 @@ impl Generate for Stmt {
     ) -> Result<Self::Out> {
         match self {
             Stmt::Return(exp) => {
-                let return_val = exp.generate(program, scope)?.into_value(program, scope);
-                let ret = new_value!(program, scope).ret(Some(return_val));
+                let return_val = if let Some(exp) = exp {
+                    Some(exp.generate(program, scope)?.into_value(program, scope))
+                } else {
+                    None
+                };
+                let ret = new_value!(program, scope).ret(return_val);
                 scope.instructions.push(ret);
                 Ok(())
             }
+            Stmt::Exp(exp) => todo!(),
+            Stmt::Block(block) => todo!(),
             Stmt::Assign(lval, exp) => {
                 let old_value = scope.get(&lval.ident)?;
                 match old_value {
