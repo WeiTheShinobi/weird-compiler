@@ -14,7 +14,8 @@ mod eval;
 #[derive(Debug)]
 pub enum Error {
     Error(String),
-    ReassignConst,
+    ReassignConst(String),
+    Redecalre(String),
     Undefine,
 }
 
@@ -24,7 +25,7 @@ pub fn generate_program(comp_unit: &CompUnit) -> Result<Program> {
     let mut program = Program::new();
     
     let insts = Vec::<Value>::new();
-    let mut scope = Scope::new(None, insts, HashMap::new());
+    let mut scope = Scope::new(None, insts, Vec::new());
 
     comp_unit.generate(&mut program, &mut scope)?;
     Ok(program)

@@ -115,7 +115,7 @@ mod test {
                 );
                 println!("koopa {}", file_name);
                 if let Err(e) = try_main(args) {
-                    dbg!(e.to_string());
+                    panic!("{}", e.to_string());
                 }
             }
         };
@@ -142,7 +142,7 @@ mod test {
                 );
                 println!("riscv {}", file_name);
                 if let Err(e) = try_main(args) {
-                    dbg!(e.to_string());
+                    panic!("{}", e.to_string());
                 }
             }
         };

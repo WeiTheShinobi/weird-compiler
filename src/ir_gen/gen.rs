@@ -77,14 +77,31 @@ impl Generate for FuncDef {
             .layout_mut()
             .bbs_mut()
             .extend([entry]);
-        for item in &self.block.block_item {
-            item.generate(program, scope)?;
-        }
+
+        self.block.generate(program, scope)?;
+
         curr_func_mut!(program, scope)
             .layout_mut()
             .bb_mut(entry)
             .insts_mut()
             .extend(mem::take(&mut scope.instructions));
+        Ok(())
+    }
+}
+
+impl Generate for Block {
+    type Out = ();
+
+    fn generate<'ast>(
+        &'ast self,
+        program: &mut Program,
+        scope: &mut Scope<'ast>,
+    ) -> Result<Self::Out> {
+        scope.enter();
+        for item in &self.block_item {
+            item.generate(program, scope)?;
+        }
+        scope.exit();
         Ok(())
     }
 }
@@ -134,6 +151,10 @@ impl Generate for VarDecl {
             let return_type = return_type.clone();
             match def {
                 VarDef::Id(id) => {
+                    if scope.is_curr_scope_exist(&id) {
+                        return Err(Error::Redecalre(id.to_string()));
+                    };
+
                     let var = new_value!(program, scope).alloc(return_type);
                     let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
                     curr_func_mut!(program, scope)
@@ -143,6 +164,9 @@ impl Generate for VarDecl {
                     scope.instructions.extend([var, zero_value]);
                 }
                 VarDef::Assign(id, init_val) => {
+                    if scope.is_curr_scope_exist(&id) {
+                        return Err(Error::Redecalre(id.to_string()));
+                    };
                     let alloc = new_value!(program, scope).alloc(return_type);
                     curr_func_mut!(program, scope)
                         .dfg_mut()
@@ -244,8 +268,17 @@ impl Generate for Stmt {
                 scope.instructions.push(ret);
                 Ok(())
             }
-            Stmt::Exp(exp) => todo!(),
-            Stmt::Block(block) => todo!(),
+            Stmt::Exp(exp) => {
+                if let Some(exp) = exp {
+                    match exp.generate(program, scope) {
+                        Ok(_) => Ok(()),
+                        Err(err) => Err(err),
+                    }
+                } else {
+                    Ok(())
+                }
+            }
+            Stmt::Block(block) => block.generate(program, scope),
             Stmt::Assign(lval, exp) => {
                 let old_value = scope.get(&lval.ident)?;
                 match old_value {
@@ -255,7 +288,7 @@ impl Generate for Stmt {
                         scope.instructions.push(store);
                         Ok(())
                     }
-                    SymbolValue::Const(_) => Err(Error::ReassignConst),
+                    SymbolValue::Const(_) => Err(Error::ReassignConst(lval.ident.clone())),
                 }
             }
         }

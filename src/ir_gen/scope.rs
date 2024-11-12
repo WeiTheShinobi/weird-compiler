@@ -29,36 +29,52 @@ impl SymbolValue {
 pub(crate) struct Scope<'ast> {
     pub(crate) function: Option<Function>,
     pub(crate) instructions: Vec<Value>,
-    pub(crate) symbol_table: HashMap<&'ast str, SymbolValue>,
+    symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
 }
 
 impl<'ast> Scope<'ast> {
     pub(crate) fn new(
         function: Option<Function>,
         instructions: Vec<Value>,
-        symbol_table: HashMap<&'ast str, SymbolValue>,
+        symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
     ) -> Self {
         Self {
             function,
             instructions,
-            symbol_table,
+            symbol_tables,
         }
+    }
+
+    pub fn is_curr_scope_exist(&self, k: &'ast str) -> bool {
+        self.symbol_tables.last().unwrap().contains_key(k)
     }
 
     pub fn add(&mut self, k: &'ast str, v: SymbolValue) -> Result<()> {
-        if let Some(old) = self.symbol_table.get(k) {
-            if let SymbolValue::Const(_) = old {
-                return Err(Error::ReassignConst);
+        let table = self.symbol_tables.last_mut().unwrap();
+        if let Some(already_exist) = table.insert(k, v) {
+            match already_exist {
+                SymbolValue::Variable(_) => Ok(()),
+                SymbolValue::Const(_) => Err(Error::ReassignConst(k.to_string())),
             }
+        } else {
+            Ok(())
         }
-        self.symbol_table.insert(k, v);
-        Ok(())
     }
 
     pub fn get(&self, k: &'ast str) -> Result<SymbolValue> {
-        match self.symbol_table.get(k) {
-            Some(v) => Ok(*v),
-            None => Err(Error::Undefine),
+        for symbol in self.symbol_tables.iter().rev() {
+            if let Some(v) = symbol.get(k) {
+                return Ok(*v);
+            };
         }
+        Err(Error::Undefine)
+    }
+
+    pub fn enter(&mut self) {
+        self.symbol_tables.push(HashMap::new());
+    }
+
+    pub fn exit(&mut self) {
+        self.symbol_tables.pop();
     }
 }
