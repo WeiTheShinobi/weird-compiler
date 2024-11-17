@@ -59,15 +59,27 @@ BlockItem: BlockItem = {
 LVal: LVal = <ident: Ident> => LVal{ <> };
 
 Stmt: Stmt = {
+    MatchedStmt => <>,
+    OpenStmt => <>,
+};
+
+MatchedStmt: Stmt = {
     <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign(<>),
     <exp: Exp?> ";" => Stmt::Exp(<>),
     <block: Block> => Stmt::Block(<>),
-    "return" <e:Exp?> ";" => Stmt::Return(<>),
-};
+    "return" <exp: Exp?> ";" => Stmt::Return(<>),
+    "if" "(" <cond: Exp> ")" <if_then: MatchedStmt> "else" <else_then: MatchedStmt> =>
+       Stmt::If(Box::new(If { cond, if_then, else_then: Some(else_then) })),
+}
 
-Exp: Exp = {
-    <exp:LOrExp> => Exp::LOrExp(exp),
-};
+OpenStmt: Stmt = {
+    "if" "(" <cond: Exp> ")" <if_then: Stmt> =>
+       Stmt::If(Box::new(If { cond, if_then, else_then: None })),
+    "if" "(" <cond: Exp> ")" <if_then: MatchedStmt> "else" <else_then: OpenStmt> =>
+       Stmt::If(Box::new(If { cond, if_then, else_then: Some(else_then) })),
+}
+
+Exp: Exp = <exp:LOrExp> => Exp::LOrExp(exp);
 
 LOrExp: LOrExp = {
     <exp: LAndExp> => LOrExp::LAndExp(exp),

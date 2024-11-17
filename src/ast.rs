@@ -82,6 +82,14 @@ pub enum Stmt {
     Exp(Option<Exp>),
     Block(Block),
     Return(Option<Exp>),
+    If(Box<If>),
+}
+
+#[derive(Debug)]
+pub struct If {
+    pub cond : Exp,
+    pub if_then: Stmt,
+    pub else_then: Option<Stmt>
 }
 
 #[derive(Debug)]
