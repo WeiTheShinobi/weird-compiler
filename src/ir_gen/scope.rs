@@ -1,35 +1,14 @@
-use koopa::ir::{builder::LocalInstBuilder, Function, Program, Value};
+use super::{Error, Result};
+use crate::ir_gen::gen::SymbolValue;
+use koopa::ir::{BasicBlock, Function, Value};
 use std::collections::HashMap;
 
-use super::{Error, Result};
 
-#[derive(Clone, Copy)]
-pub enum SymbolValue {
-    Variable(Value),
-    Const(Value),
-}
-
-impl SymbolValue {
-    pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
-        match self {
-            SymbolValue::Variable(value) => {
-                let v = program
-                    .func_mut(scope.function.unwrap())
-                    .dfg_mut()
-                    .new_value()
-                    .load(value);
-                scope.instructions.push(v);
-                v
-            }
-            SymbolValue::Const(value) => value,
-        }
-    }
-}
-
-pub(crate) struct Scope<'ast> {
-    pub(crate) function: Option<Function>,
-    pub(crate) instructions: Vec<Value>,
+pub struct Scope<'ast> {
+    pub function: Option<Function>,
+    pub instructions: Vec<Value>,
     symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
+    curr_bb: Option<BasicBlock>,
 }
 
 impl<'ast> Scope<'ast> {
@@ -42,6 +21,7 @@ impl<'ast> Scope<'ast> {
             function,
             instructions,
             symbol_tables,
+            curr_bb: None,
         }
     }
 
@@ -76,5 +56,16 @@ impl<'ast> Scope<'ast> {
 
     pub fn exit(&mut self) {
         self.symbol_tables.pop();
+    }
+
+    pub fn curr_bb(&self) -> BasicBlock {
+        self.curr_bb.unwrap()
+    }
+    pub fn push_inst(&mut self, value: Value) {
+        self.instructions.push(value);
+    }
+
+    pub fn set_bb(&mut self, bb: BasicBlock) {
+        self.curr_bb = Some(bb);
     }
 }

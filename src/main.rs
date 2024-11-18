@@ -167,6 +167,7 @@ mod test {
         test_koopa!(block);
         test_koopa!(block2);
         test_koopa!(if_else);
+        test_koopa!(if_else2);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -187,5 +188,6 @@ mod test {
         test_riscv!(block);
         test_riscv!(block2);
         test_riscv!(if_else);
+        test_riscv!(if_else2);
     }
 }

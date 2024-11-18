@@ -1,12 +1,10 @@
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BinaryOp, FunctionData, Program, Type};
-use std::mem;
+use koopa::ir::{BinaryOp, FunctionData, Program, Type, Value};
 
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
 
 use super::eval::Evaluate;
-use super::scope::SymbolValue;
 use super::{Error, Result};
 
 macro_rules! curr_func_mut {
@@ -24,10 +22,52 @@ macro_rules! new_value {
     };
 }
 
-macro_rules! value_dbg {
-    ($program:expr, $scope:expr, $value:expr) => {
-        dbg!($program.func($scope.function.unwrap()).dfg().value($value));
+macro_rules! new_bb {
+    ($program:expr, $scope:expr) => {
+        $program
+            .func_mut($scope.function.unwrap())
+            .dfg_mut()
+            .new_bb()
     };
+}
+
+macro_rules! add_bb_to_program {
+    ($program:expr, $scope:expr, $bb: expr) => {
+        curr_func_mut!($program, $scope)
+            .layout_mut()
+            .bbs_mut()
+            .extend([$bb]);
+    };
+}
+
+macro_rules! push_insts {
+    ($program:expr, $scope:expr, $($inst:expr),*) => {
+        curr_func_mut!($program, $scope)
+            .layout_mut()
+            .bb_mut($scope.curr_bb())
+            .insts_mut()
+            .extend([$($inst),*]);
+    };
+}
+
+#[derive(Clone, Copy)]
+pub enum SymbolValue {
+    Variable(Value),
+    Const(Value),
+}
+
+impl SymbolValue {
+    pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
+        match self {
+            SymbolValue::Variable(value) => {
+                let v = new_value!(program, scope)
+                    .load(value);
+                push_insts!(program, scope, v);
+                v
+            }
+            SymbolValue::Const(value) => value,
+        }
+    }
 }
 
 pub trait Generate {
@@ -68,23 +108,12 @@ impl Generate for FuncDef {
             Type::get_i32(),
         ));
         scope.function = Some(func);
+        let entry = new_bb!(program,scope).basic_block(Some("%entry".into()));
+        add_bb_to_program!(program, scope, entry);
+        scope.set_bb(entry);
 
-        let entry = curr_func_mut!(program, scope)
-            .dfg_mut()
-            .new_bb()
-            .basic_block(Some("%entry".into()));
-        curr_func_mut!(program, scope)
-            .layout_mut()
-            .bbs_mut()
-            .extend([entry]);
 
         self.block.generate(program, scope)?;
-
-        curr_func_mut!(program, scope)
-            .layout_mut()
-            .bb_mut(entry)
-            .insts_mut()
-            .extend(mem::take(&mut scope.instructions));
         Ok(())
     }
 }
@@ -161,7 +190,7 @@ impl Generate for VarDecl {
                         .dfg_mut()
                         .set_value_name(zero_value, Some(format!("@{}", id)));
                     scope.add(&id, SymbolValue::Variable(zero_value))?;
-                    scope.instructions.extend([var, zero_value]);
+                    push_insts!(program, scope, var, zero_value);
                 }
                 VarDef::Assign(id, init_val) => {
                     if scope.is_curr_scope_exist(&id) {
@@ -178,7 +207,7 @@ impl Generate for VarDecl {
                         .into_value(program, scope);
                     let store_value = new_value!(program, scope).store(value, alloc);
                     scope.add(&id, SymbolValue::Variable(alloc))?;
-                    scope.instructions.extend([alloc, store_value]);
+                    push_insts!(program, scope, alloc, store_value);
                 }
             }
         }
@@ -265,7 +294,7 @@ impl Generate for Stmt {
                     None
                 };
                 let ret = new_value!(program, scope).ret(return_val);
-                scope.instructions.push(ret);
+                push_insts!(program, scope,ret);
                 Ok(())
             }
             Stmt::Exp(exp) => {
@@ -285,11 +314,57 @@ impl Generate for Stmt {
                     SymbolValue::Variable(old) => {
                         let new_val = exp.generate(program, scope)?.into_value(program, scope);
                         let store = new_value!(program, scope).store(new_val, old);
-                        scope.instructions.push(store);
+
+                        push_insts!(program, scope, store);
                         Ok(())
                     }
                     SymbolValue::Const(_) => Err(Error::ReassignConst(lval.ident.clone())),
                 }
+            }
+            Stmt::If(if_stmt) => {
+                let cond = if_stmt.cond.generate(program, scope)?.into_value(program, scope);
+
+                if let Some(else_stmt) = &if_stmt.else_then {
+                    let if_block = new_bb!(program, scope).basic_block(Some("%then".to_string()));
+                    add_bb_to_program!(program, scope, if_block);
+                    let else_block = new_bb!(program, scope).basic_block(Some("%else".to_string()));
+                    add_bb_to_program!(program, scope, else_block);
+                    let br_end = new_bb!(program, scope).basic_block(Some("%br_end".to_string()));
+                    add_bb_to_program!(program, scope, br_end);
+
+                    let br = new_value!(program, scope).branch(cond, if_block, else_block);
+                    push_insts!(program, scope, br);
+
+                    scope.set_bb(if_block);
+                    if_stmt.if_then.generate(program, scope)?;
+                    let jmp = new_value!(program, scope).jump(br_end);
+                    push_insts!(program, scope, jmp);
+
+
+                    scope.set_bb(else_block);
+                    else_stmt.generate(program, scope)?;
+                    let jmp = new_value!(program, scope).jump(br_end);
+                    push_insts!(program, scope, jmp);
+
+                    scope.set_bb(br_end);
+                } else {
+                    let if_block = new_bb!(program, scope).basic_block(Some("%then".to_string()));
+                    add_bb_to_program!(program, scope, if_block);
+
+                    let br_end = new_bb!(program, scope).basic_block(Some("%br_end".to_string()));
+                    add_bb_to_program!(program, scope, br_end);
+
+                    let br = new_value!(program, scope).branch(cond, if_block, br_end);
+                    push_insts!(program, scope, br);
+
+                    scope.set_bb(if_block);
+                    if_stmt.if_then.generate(program, scope)?;
+                    let jmp = new_value!(program, scope).jump(br_end);
+                    push_insts!(program, scope, jmp);
+
+                    scope.set_bb(br_end);
+                }
+                Ok(())
             }
         }
     }
@@ -332,7 +407,7 @@ impl Generate for LOrExp {
                 let inst3 = new_value!(program, scope).binary(BinaryOp::Add, inst1, inst2);
                 let inst4 = new_value!(program, scope).binary(BinaryOp::Ge, inst3, one);
 
-                scope.instructions.extend([inst1, inst2, inst3, inst4]);
+                push_insts!(program, scope, inst1, inst2, inst3, inst4);
                 Ok(SymbolValue::Const(inst4))
             }
         }
@@ -362,7 +437,7 @@ impl Generate for LAndExp {
                 let inst3 = new_value!(program, scope).binary(BinaryOp::Add, inst1, inst2);
                 let inst4 = new_value!(program, scope).binary(BinaryOp::Eq, inst3, two);
 
-                scope.instructions.extend([inst1, inst2, inst3, inst4]);
+                push_insts!(program, scope, inst1, inst2, inst3, inst4);
                 Ok(SymbolValue::Const(inst4))
             }
         }
@@ -390,7 +465,7 @@ impl Generate for EqExp {
                     .dfg_mut()
                     .new_value()
                     .binary(op, lhs, rhs);
-                scope.instructions.push(inst);
+                push_insts!(program, scope, inst);
                 Ok(SymbolValue::Const(inst))
             }
         }
@@ -420,7 +495,7 @@ impl Generate for RelExp {
                     .dfg_mut()
                     .new_value()
                     .binary(op, lhs, rhs);
-                scope.instructions.push(inst);
+                push_insts!(program, scope, inst);
                 Ok(SymbolValue::Const(inst))
             }
         }
@@ -448,7 +523,7 @@ impl Generate for AddExp {
                     .dfg_mut()
                     .new_value()
                     .binary(op, lhs, rhs);
-                scope.instructions.push(inst);
+                push_insts!(program, scope, inst);
                 Ok(SymbolValue::Const(inst))
             }
         }
@@ -479,7 +554,7 @@ impl Generate for MulExp {
                     .dfg_mut()
                     .new_value()
                     .binary(op, lhs, rhs);
-                scope.instructions.push(inst);
+                push_insts!(program, scope, inst);
                 Ok(SymbolValue::Const(inst))
             }
         }
@@ -504,7 +579,7 @@ impl Generate for UnaryExp {
                         .into_value(program, scope);
                     let r_value = new_value!(program, scope).integer(0);
                     let inst = new_value!(program, scope).binary(BinaryOp::Sub, r_value, l_value);
-                    scope.instructions.push(inst);
+                    push_insts!(program, scope, inst);
                     Ok(SymbolValue::Const(inst))
                 }
                 UnaryOp::Not => {
@@ -520,7 +595,7 @@ impl Generate for UnaryExp {
                         r_value,
                         l_value,
                     );
-                    scope.instructions.push(inst);
+                    push_insts!(program, scope, inst);
                     Ok(SymbolValue::Const(inst))
                 }
             },
