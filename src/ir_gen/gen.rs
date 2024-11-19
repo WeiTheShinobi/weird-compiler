@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
 use koopa::ir::{BinaryOp, FunctionData, Program, Type, Value};
 
@@ -60,8 +62,7 @@ impl SymbolValue {
     pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
         match self {
             SymbolValue::Variable(value) => {
-                let v = new_value!(program, scope)
-                    .load(value);
+                let v = new_value!(program, scope).load(value);
                 push_insts!(program, scope, v);
                 v
             }
@@ -108,10 +109,9 @@ impl Generate for FuncDef {
             Type::get_i32(),
         ));
         scope.function = Some(func);
-        let entry = new_bb!(program,scope).basic_block(Some("%entry".into()));
+        let entry = new_bb!(program, scope).basic_block(Some("%entry".into()));
         add_bb_to_program!(program, scope, entry);
         scope.set_bb(entry);
-
 
         self.block.generate(program, scope)?;
         Ok(())
@@ -126,11 +126,11 @@ impl Generate for Block {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        scope.enter();
+        scope.enter_scope();
         for item in &self.block_item {
             item.generate(program, scope)?;
         }
-        scope.exit();
+        scope.exit_scope();
         Ok(())
     }
 }
@@ -294,7 +294,7 @@ impl Generate for Stmt {
                     None
                 };
                 let ret = new_value!(program, scope).ret(return_val);
-                push_insts!(program, scope,ret);
+                push_insts!(program, scope, ret);
                 Ok(())
             }
             Stmt::Exp(exp) => {
@@ -322,7 +322,10 @@ impl Generate for Stmt {
                 }
             }
             Stmt::If(if_stmt) => {
-                let cond = if_stmt.cond.generate(program, scope)?.into_value(program, scope);
+                let cond = if_stmt
+                    .cond
+                    .generate(program, scope)?
+                    .into_value(program, scope);
 
                 if let Some(else_stmt) = &if_stmt.else_then {
                     let if_block = new_bb!(program, scope).basic_block(Some("%then".to_string()));
@@ -339,7 +342,6 @@ impl Generate for Stmt {
                     if_stmt.if_then.generate(program, scope)?;
                     let jmp = new_value!(program, scope).jump(br_end);
                     push_insts!(program, scope, jmp);
-
 
                     scope.set_bb(else_block);
                     else_stmt.generate(program, scope)?;

@@ -1,5 +1,5 @@
 use koopa::ir::{self, *};
-use std::{collections::HashMap, fs::File, io::Write, vec};
+use std::{collections::HashMap, fs::File, io::Write, mem::transmute, vec};
 
 macro_rules! write_inst {
     ($program:expr, $action: expr, $($values:expr), *) => {
@@ -20,6 +20,12 @@ macro_rules! write_inst {
             )
             .as_str(),
         )
+    };
+}
+
+macro_rules! bb_name {
+    ($func_data: expr, $bb: expr) => {
+        $func_data.dfg().bb($bb).name().clone().unwrap().chars().skip(1).collect::<String>()
     };
 }
 
@@ -124,8 +130,15 @@ impl GenerateAsm for FunctionData {
         let stack_size = calculate_stack_size(self);
         cx.stack_size = stack_size;
 
+        let mut is_first_block = true;
         prologue(program, &cx);
-        for (&_bb, node) in self.layout().bbs() {
+        for (&bb, node) in self.layout().bbs() {
+            if !is_first_block {
+                let bb_name = bb_name!(self, bb);
+                program.write(format!("{}:", bb_name).as_str());
+            } else {
+                is_first_block = false;
+            }
             for &value in node.insts().keys() {
                 emit(self, value, program, &mut cx);
                 program.newline();
@@ -291,6 +304,23 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             epilogue(program, cx);
             write_inst!(program, "ret");
         }
+        ValueKind::Branch(branch) => {
+            write_inst!(program ,"# branch");
+            if let None = cx.get_symbol(&branch.cond()) {
+                emit(func_data, branch.cond(), program, cx);
+            }
+            let cond = cx.get_symbol(&branch.cond()).unwrap().clone();
+            cond.load_to(program, "t0");
+            
+            let true_bb_name = bb_name!(func_data, branch.true_bb());
+            let false_bb_name = bb_name!(func_data, branch.false_bb());
+            write_inst!(program, "bnez", "t0", true_bb_name);
+            write_inst!(program, "j", false_bb_name);
+        },
+        ValueKind::Jump(jump) => {
+            let target_bb_name = bb_name!(func_data, jump.target());
+            write_inst!(program, "j", target_bb_name);
+        },
         _ => unimplemented!("{:?}", value_data),
     }
 }

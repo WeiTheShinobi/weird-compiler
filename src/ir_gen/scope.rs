@@ -3,7 +3,6 @@ use crate::ir_gen::gen::SymbolValue;
 use koopa::ir::{BasicBlock, Function, Value};
 use std::collections::HashMap;
 
-
 pub struct Scope<'ast> {
     pub function: Option<Function>,
     pub instructions: Vec<Value>,
@@ -50,19 +49,18 @@ impl<'ast> Scope<'ast> {
         Err(Error::Undefine)
     }
 
-    pub fn enter(&mut self) {
+    /// { // enter scope    
+    /// } // exit scope
+    pub fn enter_scope(&mut self) {
         self.symbol_tables.push(HashMap::new());
     }
 
-    pub fn exit(&mut self) {
+    pub fn exit_scope(&mut self) {
         self.symbol_tables.pop();
     }
 
     pub fn curr_bb(&self) -> BasicBlock {
         self.curr_bb.unwrap()
-    }
-    pub fn push_inst(&mut self, value: Value) {
-        self.instructions.push(value);
     }
 
     pub fn set_bb(&mut self, bb: BasicBlock) {
