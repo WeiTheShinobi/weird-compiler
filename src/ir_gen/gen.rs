@@ -397,20 +397,35 @@ impl Generate for LOrExp {
         match self {
             LOrExp::LAndExp(land_exp) => land_exp.generate(program, scope),
             LOrExp::LOrExp(lor_exp, land_exp) => {
+                let or_false = new_bb!(program, scope).basic_block(Some("%lor_false".to_string()));
+                add_bb_to_program!(program, scope, or_false);
+                let or_end = new_bb!(program, scope).basic_block(Some("%lor_end".to_string()));
+                add_bb_to_program!(program, scope, or_end);
+                let zero = new_value!(program, scope).integer(0);
+
+                let result = new_value!(program, scope).alloc(Type::get_i32());
+                curr_func_mut!(program, scope)
+                    .dfg_mut()
+                    .set_value_name(result, Some("%logic_result".to_string()));
+
                 let lhs = lor_exp.generate(program, scope)?.into_value(program, scope);
+                let not_eq1 = new_value!(program, scope).binary(BinaryOp::NotEq, lhs, zero);
+                let store_to_result = new_value!(program, scope).store(not_eq1, result);
+                let br = new_value!(program, scope).branch(not_eq1, or_end, or_false);
+                push_insts!(program, scope, not_eq1, result, store_to_result, br);
+
+                scope.set_bb(or_false);
                 let rhs = land_exp
                     .generate(program, scope)?
                     .into_value(program, scope);
-                let zero = new_value!(program, scope).integer(0);
-                let one = new_value!(program, scope).integer(1);
+                let not_eq2 = new_value!(program, scope).binary(BinaryOp::NotEq, rhs, zero);
+                let store_to_result2 = new_value!(program, scope).store(not_eq2, result);
+                let jump = new_value!(program, scope).jump(or_end);
+                // TODO: stack size %logic_result
+                push_insts!(program, scope, not_eq2, store_to_result2, jump);
 
-                let inst1 = new_value!(program, scope).binary(BinaryOp::NotEq, lhs, zero);
-                let inst2 = new_value!(program, scope).binary(BinaryOp::NotEq, rhs, zero);
-                let inst3 = new_value!(program, scope).binary(BinaryOp::Add, inst1, inst2);
-                let inst4 = new_value!(program, scope).binary(BinaryOp::Ge, inst3, one);
-
-                push_insts!(program, scope, inst1, inst2, inst3, inst4);
-                Ok(SymbolValue::Const(inst4))
+                scope.set_bb(or_end);
+                Ok(SymbolValue::Variable(result))
             }
         }
     }
@@ -427,20 +442,35 @@ impl Generate for LAndExp {
         match self {
             LAndExp::EqExp(eq_exp) => eq_exp.generate(program, scope),
             LAndExp::LAndExp(land_exp, eq_exp) => {
+                let and_true = new_bb!(program, scope).basic_block(Some("%land_true".to_string()));
+                add_bb_to_program!(program, scope, and_true);
+                let and_end = new_bb!(program, scope).basic_block(Some("%land_end".to_string()));
+                add_bb_to_program!(program, scope, and_end);
+                let zero = new_value!(program, scope).integer(0);
+
+                let result = new_value!(program, scope).alloc(Type::get_i32());
+                curr_func_mut!(program, scope)
+                    .dfg_mut()
+                    .set_value_name(result, Some("%logic_result".to_string()));
+
                 let lhs = land_exp
                     .generate(program, scope)?
                     .into_value(program, scope);
+                let not_eq1 = new_value!(program, scope).binary(BinaryOp::NotEq, lhs, zero);
+                let store_to_result = new_value!(program, scope).store(zero, result);
+                let br = new_value!(program, scope).branch(not_eq1, and_true, and_end);
+                push_insts!(program, scope, not_eq1, result, store_to_result, br);
+
+                scope.set_bb(and_true);
                 let rhs = eq_exp.generate(program, scope)?.into_value(program, scope);
-                let zero = new_value!(program, scope).integer(0);
-                let two = new_value!(program, scope).integer(2);
+                let not_eq2 = new_value!(program, scope).binary(BinaryOp::NotEq, rhs, zero);
+                let store_to_result2 = new_value!(program, scope).store(not_eq2, result);
+                let jump = new_value!(program, scope).jump(and_end);
 
-                let inst1 = new_value!(program, scope).binary(BinaryOp::NotEq, lhs, zero);
-                let inst2 = new_value!(program, scope).binary(BinaryOp::NotEq, rhs, zero);
-                let inst3 = new_value!(program, scope).binary(BinaryOp::Add, inst1, inst2);
-                let inst4 = new_value!(program, scope).binary(BinaryOp::Eq, inst3, two);
+                push_insts!(program, scope, not_eq2, store_to_result2, jump);
 
-                push_insts!(program, scope, inst1, inst2, inst3, inst4);
-                Ok(SymbolValue::Const(inst4))
+                scope.set_bb(and_end);
+                Ok(SymbolValue::Variable(result))
             }
         }
     }
