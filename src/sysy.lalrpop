@@ -71,11 +71,15 @@ MatchedStmt: Stmt = {
     "return" <exp: Exp?> ";" => Stmt::Return(<>),
     "if" "(" <cond: Exp> ")" <if_then: MatchedStmt> "else" <else_then: MatchedStmt> =>
        Stmt::If(Box::new(If { cond, if_then, else_then: Some(else_then) })),
+    "while" "(" <cond: Exp> ")" <body: MatchedStmt> => Stmt::While(Box::new(While{ <> })),
 }
 
 OpenStmt: Stmt = {
     "if" "(" <cond: Exp> ")" <if_then: Stmt> =>
        Stmt::If(Box::new(If { cond, if_then, else_then: None })),
+    "if" "(" <cond: Exp> ")" <if_then: MatchedStmt> "else" <else_then: OpenStmt> =>
+       Stmt::If(Box::new(If { cond, if_then, else_then: Some(else_then) })),
+    "while" "(" <cond: Exp> ")" <body: OpenStmt> => Stmt::While(Box::new(While{ <> })),
 }
 
 Exp: Exp = <exp:LOrExp> => Exp::LOrExp(exp);

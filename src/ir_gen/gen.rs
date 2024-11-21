@@ -384,6 +384,7 @@ impl Generate for Stmt {
                 }
                 Ok(())
             }
+            Stmt::While(_) => Ok(()),
         }
     }
 }

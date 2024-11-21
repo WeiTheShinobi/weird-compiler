@@ -170,9 +170,11 @@ mod test {
         test_koopa!(if_else2);
         test_koopa!(if_else3);
         test_koopa!(if_else4);
+        test_koopa!(if_else5);
         test_koopa!(dangling_else);
         test_koopa!(short_circuit_or);
         test_koopa!(short_circuit_and);
+        test_koopa!(while1);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -196,8 +198,10 @@ mod test {
         test_riscv!(if_else2);
         test_riscv!(if_else3);
         test_riscv!(if_else4);
+        test_riscv!(if_else5);
         test_riscv!(dangling_else);
         test_riscv!(short_circuit_or);
         test_riscv!(short_circuit_and);
+        test_riscv!(while1);
     }
 }

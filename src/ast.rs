@@ -34,7 +34,7 @@ pub enum Decl {
 
 #[derive(Debug)]
 pub struct VarDecl {
-    pub btype :BType,
+    pub btype: BType,
     pub defs: Vec<VarDef>,
 }
 
@@ -83,13 +83,20 @@ pub enum Stmt {
     Block(Block),
     Return(Option<Exp>),
     If(Box<If>),
+    While(Box<While>),
+}
+
+#[derive(Debug)]
+pub struct While { 
+    pub cond: Exp,
+    pub body: Stmt,
 }
 
 #[derive(Debug)]
 pub struct If {
-    pub cond : Exp,
+    pub cond: Exp,
     pub if_then: Stmt,
-    pub else_then: Option<Stmt>
+    pub else_then: Option<Stmt>,
 }
 
 #[derive(Debug)]
