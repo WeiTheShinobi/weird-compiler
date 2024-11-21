@@ -175,6 +175,8 @@ mod test {
         test_koopa!(short_circuit_or);
         test_koopa!(short_circuit_and);
         test_koopa!(while1);
+        test_koopa!(break1);
+        test_koopa!(continue1);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -203,5 +205,7 @@ mod test {
         test_riscv!(short_circuit_or);
         test_riscv!(short_circuit_and);
         test_riscv!(while1);
+        test_riscv!(break1);
+        test_riscv!(continue1);
     }
 }

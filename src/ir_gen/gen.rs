@@ -79,8 +79,7 @@ fn maybe_add_jump(program: &mut Program, scope: &mut Scope, jump_to: BasicBlock)
     {
         let last_inst = last_inst.clone();
         let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
-        if let ValueKind::Return(_) = last_inst_data.kind() {
-        } else {
+        if let ValueKind::Return(_) = last_inst_data.kind() {} else {
             let jmp = new_value!(program, scope).jump(jump_to);
             push_insts!(program, scope, jmp);
         }
@@ -200,7 +199,7 @@ impl Generate for VarDecl {
             match def {
                 VarDef::Id(id) => {
                     if scope.is_curr_scope_exist(&id) {
-                        return Err(Error::Redecalre(id.to_string()));
+                        return Err(Error::Redeclare(id.to_string()));
                     };
 
                     let var = new_value!(program, scope).alloc(return_type);
@@ -213,7 +212,7 @@ impl Generate for VarDecl {
                 }
                 VarDef::Assign(id, init_val) => {
                     if scope.is_curr_scope_exist(&id) {
-                        return Err(Error::Redecalre(id.to_string()));
+                        return Err(Error::Redeclare(id.to_string()));
                     };
                     let alloc = new_value!(program, scope).alloc(return_type);
                     curr_func_mut!(program, scope)
@@ -384,7 +383,58 @@ impl Generate for Stmt {
                 }
                 Ok(())
             }
-            Stmt::While(_) => Ok(()),
+            Stmt::While(while_stmt) => {
+                let while_cond =
+                    new_bb!(program, scope).basic_block(Some("%while_cond".to_string()));
+                add_bb_to_program!(program, scope, while_cond);
+                let jump = new_value!(program, scope).jump(while_cond);
+                push_insts!(program, scope, jump);
+
+                let while_body =
+                    new_bb!(program, scope).basic_block(Some("%while_body".to_string()));
+                add_bb_to_program!(program, scope, while_body);
+                let while_end =
+                    new_bb!(program, scope).basic_block(Some("%while_end".to_string()));
+                add_bb_to_program!(program, scope, while_end);
+
+                scope.enter_loop(while_cond, while_end);
+                scope.set_bb(while_cond);
+
+                let cond = while_stmt
+                    .cond
+                    .generate(program, scope)?
+                    .into_value(program, scope);
+                let br = new_value!(program, scope).branch(cond, while_body, while_end);
+                push_insts!(program, scope, br);
+
+                scope.set_bb(while_body);
+                while_stmt.body.generate(program, scope)?;
+                maybe_add_jump(program, scope, while_cond);
+
+                scope.exit_loop();
+                scope.set_bb(while_end);
+                Ok(())
+            }
+            Stmt::Break => {
+                let loop_block = scope.get_loop_block()?;
+                let jump = new_value!(program, scope).jump(loop_block.exit);
+                push_insts!(program, scope, jump);
+
+                let bb = new_bb!(program, scope).basic_block(Some("%after_break".to_string()));
+                add_bb_to_program!(program,scope,bb);
+                scope.set_bb(bb);
+                Ok(())
+            }
+            Stmt::Continue => {
+                let loop_block = scope.get_loop_block()?;
+                let jump = new_value!(program, scope).jump(loop_block.entry);
+                push_insts!(program, scope, jump);
+
+                let bb = new_bb!(program, scope).basic_block(Some("%after_continue".to_string()));
+                add_bb_to_program!(program,scope,bb);
+                scope.set_bb(bb);
+                Ok(())
+            }
         }
     }
 }

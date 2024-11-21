@@ -84,10 +84,12 @@ pub enum Stmt {
     Return(Option<Exp>),
     If(Box<If>),
     While(Box<While>),
+    Break,
+    Continue,
 }
 
 #[derive(Debug)]
-pub struct While { 
+pub struct While {
     pub cond: Exp,
     pub body: Stmt,
 }

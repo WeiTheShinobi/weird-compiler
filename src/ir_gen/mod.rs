@@ -15,8 +15,9 @@ mod eval;
 pub enum Error {
     Error(String),
     ReassignConst(String),
-    Redecalre(String),
-    Undefine,
+    Redeclare(String),
+    NoInLoop,
+    Undefined,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

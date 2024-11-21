@@ -2,12 +2,21 @@ use super::{Error, Result};
 use crate::ir_gen::gen::SymbolValue;
 use koopa::ir::{BasicBlock, Function, Value};
 use std::collections::HashMap;
+use std::thread::sleep;
+use crate::ir_gen::Error::NoInLoop;
 
 pub struct Scope<'ast> {
     pub function: Option<Function>,
     pub instructions: Vec<Value>,
+    loop_stack: Vec<LoopBlock>,
     symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
     curr_bb: Option<BasicBlock>,
+}
+
+#[derive(Copy, Clone)]
+pub struct LoopBlock {
+    pub entry: BasicBlock,
+    pub exit: BasicBlock,
 }
 
 impl<'ast> Scope<'ast> {
@@ -19,6 +28,7 @@ impl<'ast> Scope<'ast> {
         Self {
             function,
             instructions,
+            loop_stack: vec![],
             symbol_tables,
             curr_bb: None,
         }
@@ -46,7 +56,7 @@ impl<'ast> Scope<'ast> {
                 return Ok(*v);
             };
         }
-        Err(Error::Undefine)
+        Err(Error::Undefined)
     }
 
     /// { // enter scope    
@@ -65,5 +75,20 @@ impl<'ast> Scope<'ast> {
 
     pub fn set_bb(&mut self, bb: BasicBlock) {
         self.curr_bb = Some(bb);
+    }
+
+    pub fn enter_loop(&mut self, entry: BasicBlock, exit: BasicBlock) {
+        self.loop_stack.push(LoopBlock { entry, exit })
+    }
+
+    pub fn exit_loop(&mut self) {
+        self.loop_stack.pop();
+    }
+    pub fn get_loop_block(&mut self) -> Result<LoopBlock> {
+        if let Some(bbs) = self.loop_stack.last() {
+            Ok(bbs.clone())
+        } else {
+            Err(NoInLoop)
+        }
     }
 }
