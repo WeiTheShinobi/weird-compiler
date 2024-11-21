@@ -76,8 +76,6 @@ MatchedStmt: Stmt = {
 OpenStmt: Stmt = {
     "if" "(" <cond: Exp> ")" <if_then: Stmt> =>
        Stmt::If(Box::new(If { cond, if_then, else_then: None })),
-    "if" "(" <cond: Exp> ")" <if_then: MatchedStmt> "else" <else_then: OpenStmt> =>
-       Stmt::If(Box::new(If { cond, if_then, else_then: Some(else_then) })),
 }
 
 Exp: Exp = <exp:LOrExp> => Exp::LOrExp(exp);

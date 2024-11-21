@@ -1,7 +1,5 @@
-use std::str::FromStr;
-
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BinaryOp, FunctionData, Program, Type, Value};
+use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
 
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
@@ -68,6 +66,27 @@ impl SymbolValue {
             }
             SymbolValue::Const(value) => value,
         }
+    }
+}
+
+/// if last inst isn't "Return", add jump inst and return true
+fn maybe_add_jump(program: &mut Program, scope: &mut Scope, jump_to: BasicBlock) {
+    if let Some(last_inst) = curr_func_mut!(program, scope)
+        .layout_mut()
+        .bb_mut(scope.curr_bb())
+        .insts()
+        .back_key()
+    {
+        let last_inst = last_inst.clone();
+        let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
+        if let ValueKind::Return(_) = last_inst_data.kind() {
+        } else {
+            let jmp = new_value!(program, scope).jump(jump_to);
+            push_insts!(program, scope, jmp);
+        }
+    } else {
+        let jmp = new_value!(program, scope).jump(jump_to);
+        push_insts!(program, scope, jmp);
     }
 }
 
@@ -340,13 +359,11 @@ impl Generate for Stmt {
 
                     scope.set_bb(if_block);
                     if_stmt.if_then.generate(program, scope)?;
-                    let jmp = new_value!(program, scope).jump(br_end);
-                    push_insts!(program, scope, jmp);
+                    maybe_add_jump(program, scope, br_end);
 
                     scope.set_bb(else_block);
                     else_stmt.generate(program, scope)?;
-                    let jmp = new_value!(program, scope).jump(br_end);
-                    push_insts!(program, scope, jmp);
+                    maybe_add_jump(program, scope, br_end);
 
                     scope.set_bb(br_end);
                 } else {
@@ -361,8 +378,7 @@ impl Generate for Stmt {
 
                     scope.set_bb(if_block);
                     if_stmt.if_then.generate(program, scope)?;
-                    let jmp = new_value!(program, scope).jump(br_end);
-                    push_insts!(program, scope, jmp);
+                    maybe_add_jump(program, scope, br_end);
 
                     scope.set_bb(br_end);
                 }
@@ -618,15 +634,8 @@ impl Generate for UnaryExp {
                     let l_value = unary_exp
                         .generate(program, scope)?
                         .into_value(program, scope);
-                    let r_value = curr_func_mut!(program, scope)
-                        .dfg_mut()
-                        .new_value()
-                        .integer(0);
-                    let inst = curr_func_mut!(program, scope).dfg_mut().new_value().binary(
-                        BinaryOp::Eq,
-                        r_value,
-                        l_value,
-                    );
+                    let r_value = new_value!(program, scope).integer(0);
+                    let inst = new_value!(program, scope).binary(BinaryOp::Eq, r_value, l_value);
                     push_insts!(program, scope, inst);
                     Ok(SymbolValue::Const(inst))
                 }

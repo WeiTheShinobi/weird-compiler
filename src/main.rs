@@ -168,6 +168,9 @@ mod test {
         test_koopa!(block2);
         test_koopa!(if_else);
         test_koopa!(if_else2);
+        test_koopa!(if_else3);
+        test_koopa!(if_else4);
+        test_koopa!(dangling_else);
         test_koopa!(short_circuit_or);
         test_koopa!(short_circuit_and);
     }
@@ -191,6 +194,9 @@ mod test {
         test_riscv!(block2);
         test_riscv!(if_else);
         test_riscv!(if_else2);
+        test_riscv!(if_else3);
+        test_riscv!(if_else4);
+        test_riscv!(dangling_else);
         test_riscv!(short_circuit_or);
         test_riscv!(short_circuit_and);
     }
