@@ -9,24 +9,33 @@ match {
     _
 }
 
-pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit{ <> };
+pub CompUnit: CompUnit = <comp_unit: CompUnit?> <func_def: FuncDef> => CompUnit{ comp_unit: Box::new(comp_unit), func_def };
 
 FuncDef: FuncDef = {
-    <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
+    <func_type: FuncType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => {
         FuncDef{ <> }
     }
 };
 
-FuncType: FuncType = "int" => FuncType::Int;
+FuncFParams: Vec<FuncFParam> = <params: VectorValue<FuncFParam>> => <>;
+
+FuncFParam: FuncFParam = <btype: BType> <ident: Ident> => FuncFParam{ <> };
+
+FuncRParams: Vec<Exp> = <params: VectorValue<Exp>> => <>;
+
+FuncType: FuncType = {
+    "void" => FuncType::Void,
+    "int" => FuncType::Int,
+}
 
 Decl: Decl = {
     <decl: ConstDecl> => Decl::ConstDecl(decl),
     <decl: VarDecl> => Decl::VarDecl(decl),
 };
 
-ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValue<ConstDef>> ";" => ConstDecl{ <> };
+ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValueAtLeast1<ConstDef>> ";" => ConstDecl{ <> };
 
-VarDecl: VarDecl = <btype: BType> <defs: VectorValue<VarDef>> ";" => VarDecl{ <> };
+VarDecl: VarDecl = <btype: BType> <defs: VectorValueAtLeast1<VarDef>> ";" => VarDecl{ <> };
 
 VarDef: VarDef = {
     <id: Ident> => VarDef::Id(<>), 
@@ -35,10 +44,19 @@ VarDef: VarDef = {
 
 InitVal: InitVal = <exp: Exp> => InitVal{ <> };
 
-VectorValue<T>: Vec<T> = {
+VectorValueAtLeast1<T>: Vec<T> = {
     <mut v:(<T>)+> <mut e: ("," <T>)*> => {
         v.append(&mut e);
         v
+    }
+};
+
+VectorValue<T>: Vec<T> = {
+    <mut v:(<T>)?> <mut e: ("," <T>)*> => {
+        if let Some(v) = v {
+            e.insert(0, v);
+        }
+        e
     }
 };
 
@@ -148,6 +166,9 @@ PrimaryExp: PrimaryExp = {
 UnaryExp: UnaryExp = {
     <p:PrimaryExp> => UnaryExp::PrimaryExp(p),
     <op:UnaryOp> <u:UnaryExp> => UnaryExp::UnaryOp(op, Box::new(u)),
+     <ident: Ident> "(" <args: FuncRParams> ")" => {
+       UnaryExp::Call(FuncCall { ident, args })
+     },
 };
 
 UnaryOp: UnaryOp = {

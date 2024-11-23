@@ -125,6 +125,7 @@ impl Evaluate for UnaryExp {
                     if unary_exp.eval(program, scope)? == 0 {Some(1)} else {Some(0)}
                 }
             },
+            UnaryExp::Call(_) => {panic!("function call not implement compile time eval")}
         }
     }
 }

@@ -2,6 +2,7 @@ use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilde
 use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
 
 use crate::ast::*;
+use crate::ir_gen::Error::Undefined;
 use crate::ir_gen::scope::Scope;
 
 use super::eval::Evaluate;
@@ -107,9 +108,7 @@ impl Generate for CompUnit {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        self.func_def.generate(program, scope)?;
-        dbg!(self);
-        Ok(())
+        self.func_def.generate(program, scope)
     }
 }
 
@@ -691,6 +690,9 @@ impl Generate for UnaryExp {
                     Ok(SymbolValue::Const(inst))
                 }
             },
+            UnaryExp::Call(_) => {
+                Err(Undefined)
+            }
         }
     }
 }

@@ -52,6 +52,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         .parse(&input)
         .map_err(|_| Error::Parse)?;
 
+    dbg!(input);
     match args.mode.as_str() {
         "-koopa" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
