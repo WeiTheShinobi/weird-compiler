@@ -1,12 +1,12 @@
 use std::env::args;
-use std::fmt::{self, write};
+use std::fmt::{self};
 
 use std::fs::{read_to_string, File};
 
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 use std::io;
-use std::process::{exit, Output};
+use std::process::exit;
 
 mod ast;
 mod ir_gen;
@@ -179,6 +179,7 @@ mod test {
         test_koopa!(while1);
         test_koopa!(break1);
         test_koopa!(continue1);
+        test_koopa!(function1);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -210,5 +211,6 @@ mod test {
         test_riscv!(while1);
         test_riscv!(break1);
         test_riscv!(continue1);
+        test_riscv!(function1);
     }
 }

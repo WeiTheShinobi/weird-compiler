@@ -1,5 +1,5 @@
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
+use koopa::ir::{BasicBlock, BinaryOp, Function, FunctionData, Program, Type, Value, ValueKind};
 
 use crate::ast::*;
 use crate::ir_gen::Error::Undefined;
@@ -108,7 +108,11 @@ impl Generate for CompUnit {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        self.func_def.generate(program, scope)
+        if let Some(ref comp_unit) = *self.comp_unit {
+            comp_unit.generate(program, scope)?
+        }
+        self.func_def.generate(program, scope)?;
+        Ok(())
     }
 }
 
@@ -126,6 +130,8 @@ impl Generate for FuncDef {
             Type::get_i32(),
         ));
         scope.function = Some(func);
+        scope.global.function.insert(self.ident.as_str(), func);
+
         let entry = new_bb!(program, scope).basic_block(Some("%entry".into()));
         add_bb_to_program!(program, scope, entry);
         scope.set_bb(entry);
@@ -690,8 +696,21 @@ impl Generate for UnaryExp {
                     Ok(SymbolValue::Const(inst))
                 }
             },
-            UnaryExp::Call(_) => {
-                Err(Undefined)
+            UnaryExp::Call(func_call) => {
+                match scope.global.function.get(func_call.ident.as_str()) {
+                    Some(func) => {
+                        let func = func.clone();
+                        let mut args = vec![];
+                        for exp in &func_call.args {
+                            let arg = exp.generate(program, scope)?.into_value(program, scope);
+                            args.push(arg);
+                        }
+                        let call = new_value!(program, scope).call(func, args);
+                        push_insts!(program, scope, call);
+                        Ok(SymbolValue::Variable(call))
+                    }
+                    None => Err(Undefined(format!("Function Undefined: {:?}", func_call.ident))),
+                }
             }
         }
     }

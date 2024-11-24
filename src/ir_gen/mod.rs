@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
-use koopa::ir::{Program, Value};
+use koopa::ir::Program;
 
 use gen::Generate;
 use scope::Scope;
 
 use crate::ast::CompUnit;
+use crate::ir_gen::scope::Global;
 
 mod gen;
 mod scope;
@@ -17,16 +16,14 @@ pub enum Error {
     ReassignConst(String),
     Redeclare(String),
     NoInLoop,
-    Undefined,
+    Undefined(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn generate_program(comp_unit: &CompUnit) -> Result<Program> {
     let mut program = Program::new();
-    
-    let insts = Vec::<Value>::new();
-    let mut scope = Scope::new(None, insts, Vec::new());
+    let mut scope = Scope::new(None, Global::new(), Vec::new());
 
     comp_unit.generate(&mut program, &mut scope)?;
     Ok(program)

@@ -1,16 +1,30 @@
 use super::{Error, Result};
 use crate::ir_gen::gen::SymbolValue;
-use koopa::ir::{BasicBlock, Function, Value};
-use std::collections::HashMap;
-use std::thread::sleep;
 use crate::ir_gen::Error::NoInLoop;
+use koopa::ir::{BasicBlock, Function};
+use std::collections::HashMap;
 
 pub struct Scope<'ast> {
     pub function: Option<Function>,
-    pub instructions: Vec<Value>,
+    pub global: Global<'ast>,
     loop_stack: Vec<LoopBlock>,
     symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
     curr_bb: Option<BasicBlock>,
+}
+
+#[derive(Clone)]
+pub struct Global<'ast> {
+    pub function: HashMap<&'ast str, Function>,
+    pub decl: HashMap<&'ast str, SymbolValue>,
+}
+
+impl<'ast> Global<'ast> {
+    pub fn new() -> Self {
+        Global {
+            function: HashMap::new(),
+            decl: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -22,12 +36,12 @@ pub struct LoopBlock {
 impl<'ast> Scope<'ast> {
     pub(crate) fn new(
         function: Option<Function>,
-        instructions: Vec<Value>,
+        global: Global<'ast>,
         symbol_tables: Vec<HashMap<&'ast str, SymbolValue>>,
     ) -> Self {
         Self {
             function,
-            instructions,
+            global,
             loop_stack: vec![],
             symbol_tables,
             curr_bb: None,
@@ -56,7 +70,7 @@ impl<'ast> Scope<'ast> {
                 return Ok(*v);
             };
         }
-        Err(Error::Undefined)
+        Err(Error::Undefined(format!("not found : {:?}", k)))
     }
 
     /// { // enter scope    

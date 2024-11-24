@@ -30,21 +30,20 @@ macro_rules! bb_name {
 }
 
 pub struct Program {
-    asm: Vec<String>,
     writer: File,
 }
 
 impl Program {
     pub fn new(file: File) -> Program {
         Program {
-            asm: vec![],
             writer: file,
         }
     }
 
+    #[rustfmt::skip]
     fn write(&mut self, inst: &str) {
-        self.writer.write_all(inst.as_bytes());
-        self.writer.write_all("\n".as_bytes());
+        if let Err(e) = self.writer.write_all(inst.as_bytes()) {panic!("{:?}", e)}
+        if let Err(e) = self.writer.write_all("\n".as_bytes()) {panic!("{:?}", e)}
     }
 
     fn newline(&mut self) {
@@ -311,16 +310,16 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             }
             let cond = cx.get_symbol(&branch.cond()).unwrap().clone();
             cond.load_to(program, "t0");
-            
+
             let true_bb_name = bb_name!(func_data, branch.true_bb());
             let false_bb_name = bb_name!(func_data, branch.false_bb());
             write_inst!(program, "bnez", "t0", true_bb_name);
             write_inst!(program, "j", false_bb_name);
-        },
+        }
         ValueKind::Jump(jump) => {
             let target_bb_name = bb_name!(func_data, jump.target());
             write_inst!(program, "j", target_bb_name);
-        },
+        }
         _ => unimplemented!("{:?}", value_data),
     }
 }
