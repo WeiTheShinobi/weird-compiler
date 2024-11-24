@@ -157,7 +157,8 @@ mod test {
         };
 
         test_koopa!(arithmetic);
-        test_koopa!(const_decl);
+        test_koopa!(const1);
+        test_koopa!(const2);
         test_koopa!(hello);
         test_koopa!(land);
         test_koopa!(logic);
@@ -187,7 +188,8 @@ mod test {
         };
 
         test_riscv!(arithmetic);
-        test_riscv!(const_decl);
+        test_riscv!(const1);
+        test_riscv!(const2);
         test_riscv!(hello);
         test_riscv!(land);
         test_riscv!(logic);

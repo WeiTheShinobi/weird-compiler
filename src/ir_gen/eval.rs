@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
-use koopa::ir::Program;
+use koopa::ir::{Program, ValueKind};
+use crate::ir_gen::gen::SymbolValue;
 
 pub trait Evaluate {
     fn eval<'ast>(&'ast self, program: &mut Program, scope: &mut Scope<'ast>) -> Option<i32>;
@@ -101,8 +102,8 @@ impl Evaluate for MulExp {
             MulExp::UnaryExp(unary_exp) => unary_exp.eval(program, scope),
             #[rustfmt::skip]
             MulExp::MulAndUnary(mul_exp, mul_op, unary_exp) => {
-                let a = mul_exp.eval(program, scope).unwrap();
-                let b = unary_exp.eval(program, scope).unwrap();
+                let a = mul_exp.eval(program, scope)?;
+                let b = unary_exp.eval(program, scope)?;
                 match mul_op {
                     MulOp::Mul => Some(a*b),
                     MulOp::Div => Some(a/b),
@@ -125,7 +126,7 @@ impl Evaluate for UnaryExp {
                     if unary_exp.eval(program, scope)? == 0 {Some(1)} else {Some(0)}
                 }
             },
-            UnaryExp::Call(_) => {panic!("function call not implement compile time eval")}
+            UnaryExp::Call(_) => panic!("function call not implement compile time eval"),
         }
     }
 }
@@ -134,7 +135,22 @@ impl Evaluate for PrimaryExp {
     fn eval<'ast>(&'ast self, program: &mut Program, scope: &mut Scope<'ast>) -> Option<i32> {
         match self {
             PrimaryExp::Expression(exp) => exp.eval(program, scope),
-            PrimaryExp::LVal(_) => None,
+            PrimaryExp::LVal(l_val) => {
+                match scope.get(l_val.ident.as_str()) {
+                    Ok(symbol_value) => match symbol_value {
+                        SymbolValue::Variable(v) => {panic!("can not use variable in const eval: {:?}", v)}
+                        SymbolValue::Const(c) => {
+                            let data = program.func_mut(scope.function?).dfg().value(c);
+                            if let ValueKind::Integer(int )=  data.kind() {
+                                Some(int.value())
+                            } else {
+                                panic!("eval error, can't resolve symbol: {:?}", data);
+                            }
+                        }
+                    }
+                    Err(e) => panic!("{:?}", e),
+                }
+            },
             PrimaryExp::Number(int) => Some(*int),
         }
     }
