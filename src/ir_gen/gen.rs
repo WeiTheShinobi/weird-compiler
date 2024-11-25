@@ -1,7 +1,8 @@
+use std::fmt::format;
 use std::panic::panic_any;
 
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BasicBlock, BinaryOp, Function, FunctionData, Program, Type, Value, ValueKind};
+use koopa::ir::{BasicBlock, BinaryOp, Function, FunctionData, Program, Type, TypeKind, Value, ValueKind};
 
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
@@ -55,20 +56,20 @@ macro_rules! push_insts {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolValue {
-    Variable(Value),
-    Const(Value),
+    NeedLoad(Value),
+    Value(Value),
 }
 
 impl SymbolValue {
     pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
         match self {
-            SymbolValue::Variable(value) => {
+            SymbolValue::NeedLoad(value) => {
                 dbg!(curr_func_mut!(program, scope).dfg().value(value));
                 let v = new_value!(program, scope).load(value);
                 push_insts!(program, scope, v);
                 v
             }
-            SymbolValue::Const(value) => value,
+            SymbolValue::Value(value) => value,
         }
     }
 }
@@ -83,14 +84,35 @@ fn maybe_add_jump(program: &mut Program, scope: &mut Scope, jump_to: BasicBlock)
     {
         let last_inst = last_inst.clone();
         let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
-        if let ValueKind::Return(_) = last_inst_data.kind() {
-        } else {
+        if let ValueKind::Return(_) = last_inst_data.kind() {} else {
             let jmp = new_value!(program, scope).jump(jump_to);
             push_insts!(program, scope, jmp);
         }
     } else {
         let jmp = new_value!(program, scope).jump(jump_to);
         push_insts!(program, scope, jmp);
+    }
+}
+
+fn maybe_add_return(program: &mut Program, scope: &mut Scope) {
+    let last_inst = match curr_func_mut!(program, scope)
+        .layout_mut()
+        .bb_mut(scope.curr_bb())
+        .insts()
+        .back_key() {
+        Some(last_inst) => last_inst.clone(),
+        None => {
+            let ret = new_value!(program, scope).ret(None);
+            push_insts!(program, scope, ret);
+            return;
+        }
+    };
+
+    let last_inst = last_inst.clone();
+    let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
+    if let ValueKind::Return(_) = last_inst_data.kind() {} else {
+        let ret = new_value!(program, scope).ret(None);
+        push_insts!(program, scope, ret);
     }
 }
 
@@ -127,6 +149,12 @@ fn btype_to_ir_type(ty: BType) -> Type {
     }
 }
 
+fn param_to_ir_type(param: &FuncFParam) -> (Option<String>, Type) {
+    match param.btype {
+        BType::Int => (Some(format!("@{}", param.ident.clone())), Type::get_i32()),
+    }
+}
+
 impl Generate for FuncDef {
     type Out = ();
 
@@ -138,41 +166,44 @@ impl Generate for FuncDef {
         let params_ty = self
             .params
             .iter()
-            .map(|param| btype_to_ir_type(param.btype))
+            .map(param_to_ir_type)
             .collect();
         let return_ty = match self.func_type {
             FuncType::Int => Type::get_i32(),
             FuncType::Void => Type::get_unit(),
         };
-        let func = program.new_func(FunctionData::new_decl(
+        let func = program.new_func(FunctionData::with_param_names(
             format!("@{}", self.ident),
             params_ty,
             return_ty,
         ));
+
         scope.function = Some(func);
         scope.global.function.insert(self.ident.as_str(), func);
-        
+
         let entry = new_bb!(program, scope).basic_block(Some("%entry".into()));
         add_bb_to_program!(program, scope, entry);
         scope.set_bb(entry);
         scope.enter_scope();
-        for param in &self.params {
-            let p = new_value!(program, scope).alloc(btype_to_ir_type(param.btype));
+
+        for i in 0..self.params.len() {
+            let param = program.func(scope.function.unwrap()).params()[i].clone();
+            let data = curr_func_mut!(program,scope).dfg_mut().value(param);
+            let ty = data.ty().clone();
+            let name = data.name().clone().unwrap();
+            let name = name.trim_start_matches("@");
+            let p_var = new_value!(program, scope).alloc(ty);
             curr_func_mut!(program, scope)
                 .dfg_mut()
-                .set_value_name(p, Some(format!("@{}", param.ident)));
-            // let p_var = new_value!(program, scope).alloc(btype_to_ir_type(param.btype));
-            // curr_func_mut!(program, scope)
-            //     .dfg_mut()
-            //     .set_value_name(p_var, Some(format!("%{}", param.ident)));
-            // let store = new_value!(program, scope).store(p, p_var);
-            push_insts!(program, scope, p);
-            dbg!(curr_func_mut!(program, scope).dfg().value(p));
-            let id = param.ident.as_str();
-            scope.add(&id, SymbolValue::Variable(p))?;
+                .set_value_name(p_var, Some(format!("%{}", name.clone())));
+            let store = new_value!(program, scope).store(param, p_var);
+            let load = new_value!(program, scope).load(p_var);
+            push_insts!(program, scope, p_var, store, load);
+            scope.add(self.params[i].ident.as_str(), SymbolValue::Value(load))?;
         }
 
         self.block.generate(program, scope)?;
+        maybe_add_return(program, scope);
         scope.exit_scope();
         Ok(())
     }
@@ -249,7 +280,7 @@ impl Generate for VarDecl {
                     curr_func_mut!(program, scope)
                         .dfg_mut()
                         .set_value_name(zero_value, Some(format!("@{}", id)));
-                    scope.add(&id, SymbolValue::Variable(zero_value))?;
+                    scope.add(&id, SymbolValue::NeedLoad(zero_value))?;
                     push_insts!(program, scope, var, zero_value);
                 }
                 VarDef::Assign(id, init_val) => {
@@ -266,7 +297,7 @@ impl Generate for VarDecl {
                         .generate(program, scope)?
                         .into_value(program, scope);
                     let store_value = new_value!(program, scope).store(value, alloc);
-                    scope.add(&id, SymbolValue::Variable(alloc))?;
+                    scope.add(&id, SymbolValue::NeedLoad(alloc))?;
                     push_insts!(program, scope, alloc, store_value);
                 }
             }
@@ -305,7 +336,7 @@ impl Generate for ConstDef {
         let r_val = self.const_init_val.generate(program, scope)?;
         scope.add(
             &self.ident,
-            SymbolValue::Const(new_value!(program, scope).integer(r_val)),
+            SymbolValue::Value(new_value!(program, scope).integer(r_val)),
         )
     }
 }
@@ -371,14 +402,14 @@ impl Generate for Stmt {
             Stmt::Assign(lval, exp) => {
                 let old_value = scope.get(&lval.ident)?;
                 match old_value {
-                    SymbolValue::Variable(old) => {
+                    SymbolValue::NeedLoad(old) => {
                         let new_val = exp.generate(program, scope)?.into_value(program, scope);
                         let store = new_value!(program, scope).store(new_val, old);
 
                         push_insts!(program, scope, store);
                         Ok(())
                     }
-                    SymbolValue::Const(_) => Err(Error::ReassignConst(lval.ident.clone())),
+                    SymbolValue::Value(_) => Err(Error::ReassignConst(lval.ident.clone())),
                 }
             }
             Stmt::If(if_stmt) => {
@@ -533,7 +564,7 @@ impl Generate for LOrExp {
                 push_insts!(program, scope, not_eq2, store_to_result2, jump);
 
                 scope.set_bb(or_end);
-                Ok(SymbolValue::Variable(result))
+                Ok(SymbolValue::NeedLoad(result))
             }
         }
     }
@@ -578,7 +609,7 @@ impl Generate for LAndExp {
                 push_insts!(program, scope, not_eq2, store_to_result2, jump);
 
                 scope.set_bb(and_end);
-                Ok(SymbolValue::Variable(result))
+                Ok(SymbolValue::NeedLoad(result))
             }
         }
     }
@@ -606,7 +637,7 @@ impl Generate for EqExp {
                     .new_value()
                     .binary(op, lhs, rhs);
                 push_insts!(program, scope, inst);
-                Ok(SymbolValue::Const(inst))
+                Ok(SymbolValue::Value(inst))
             }
         }
     }
@@ -636,7 +667,7 @@ impl Generate for RelExp {
                     .new_value()
                     .binary(op, lhs, rhs);
                 push_insts!(program, scope, inst);
-                Ok(SymbolValue::Const(inst))
+                Ok(SymbolValue::Value(inst))
             }
         }
     }
@@ -664,7 +695,7 @@ impl Generate for AddExp {
                     .new_value()
                     .binary(op, lhs, rhs);
                 push_insts!(program, scope, inst);
-                Ok(SymbolValue::Const(inst))
+                Ok(SymbolValue::Value(inst))
             }
         }
     }
@@ -695,7 +726,7 @@ impl Generate for MulExp {
                     .new_value()
                     .binary(op, lhs, rhs);
                 push_insts!(program, scope, inst);
-                Ok(SymbolValue::Const(inst))
+                Ok(SymbolValue::Value(inst))
             }
         }
     }
@@ -720,7 +751,7 @@ impl Generate for UnaryExp {
                     let r_value = new_value!(program, scope).integer(0);
                     let inst = new_value!(program, scope).binary(BinaryOp::Sub, r_value, l_value);
                     push_insts!(program, scope, inst);
-                    Ok(SymbolValue::Const(inst))
+                    Ok(SymbolValue::Value(inst))
                 }
                 UnaryOp::Not => {
                     let l_value = unary_exp
@@ -729,7 +760,7 @@ impl Generate for UnaryExp {
                     let r_value = new_value!(program, scope).integer(0);
                     let inst = new_value!(program, scope).binary(BinaryOp::Eq, r_value, l_value);
                     push_insts!(program, scope, inst);
-                    Ok(SymbolValue::Const(inst))
+                    Ok(SymbolValue::Value(inst))
                 }
             },
             UnaryExp::Call(func_call) => {
@@ -743,7 +774,7 @@ impl Generate for UnaryExp {
                         }
                         let call = new_value!(program, scope).call(func, args);
                         push_insts!(program, scope, call);
-                        Ok(SymbolValue::Variable(call))
+                        Ok(SymbolValue::Value(call))
                     }
                     None => Err(Undefined(format!(
                         "Function Undefined: {:?}",
@@ -765,7 +796,7 @@ impl Generate for PrimaryExp {
     ) -> Result<Self::Out> {
         match self {
             PrimaryExp::Expression(exp) => exp.generate(program, scope),
-            PrimaryExp::Number(n) => Ok(SymbolValue::Const(new_value!(program, scope).integer(*n))),
+            PrimaryExp::Number(n) => Ok(SymbolValue::Value(new_value!(program, scope).integer(*n))),
             PrimaryExp::LVal(lval) => match scope.get(&lval.ident) {
                 Ok(v) => Ok(v),
                 Err(err) => Err(err),

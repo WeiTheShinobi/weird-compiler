@@ -138,8 +138,8 @@ impl Evaluate for PrimaryExp {
             PrimaryExp::LVal(l_val) => {
                 match scope.get(l_val.ident.as_str()) {
                     Ok(symbol_value) => match symbol_value {
-                        SymbolValue::Variable(v) => {panic!("can not use variable in const eval: {:?}", v)}
-                        SymbolValue::Const(c) => {
+                        SymbolValue::NeedLoad(v) => {panic!("can not use variable in const eval: {:?}", v)}
+                        SymbolValue::Value(c) => {
                             let data = program.func_mut(scope.function?).dfg().value(c);
                             if let ValueKind::Integer(int )=  data.kind() {
                                 Some(int.value())
