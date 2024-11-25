@@ -1,9 +1,11 @@
+use std::panic::panic_any;
+
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
 use koopa::ir::{BasicBlock, BinaryOp, Function, FunctionData, Program, Type, Value, ValueKind};
 
 use crate::ast::*;
-use crate::ir_gen::Error::Undefined;
 use crate::ir_gen::scope::Scope;
+use crate::ir_gen::Error::Undefined;
 
 use super::eval::Evaluate;
 use super::{Error, Result};
@@ -51,7 +53,7 @@ macro_rules! push_insts {
     };
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum SymbolValue {
     Variable(Value),
     Const(Value),
@@ -61,6 +63,7 @@ impl SymbolValue {
     pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
         match self {
             SymbolValue::Variable(value) => {
+                dbg!(curr_func_mut!(program, scope).dfg().value(value));
                 let v = new_value!(program, scope).load(value);
                 push_insts!(program, scope, v);
                 v
@@ -80,7 +83,8 @@ fn maybe_add_jump(program: &mut Program, scope: &mut Scope, jump_to: BasicBlock)
     {
         let last_inst = last_inst.clone();
         let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
-        if let ValueKind::Return(_) = last_inst_data.kind() {} else {
+        if let ValueKind::Return(_) = last_inst_data.kind() {
+        } else {
             let jmp = new_value!(program, scope).jump(jump_to);
             push_insts!(program, scope, jmp);
         }
@@ -108,11 +112,18 @@ impl Generate for CompUnit {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
+        dbg!(&self.func_def);
         if let Some(ref comp_unit) = *self.comp_unit {
             comp_unit.generate(program, scope)?
         }
         self.func_def.generate(program, scope)?;
+        scope.reset_symbol_table();
         Ok(())
+    }
+}
+fn btype_to_ir_type(ty: BType) -> Type {
+    match ty {
+        BType::Int => Type::get_i32(),
     }
 }
 
@@ -124,19 +135,45 @@ impl Generate for FuncDef {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
+        let params_ty = self
+            .params
+            .iter()
+            .map(|param| btype_to_ir_type(param.btype))
+            .collect();
+        let return_ty = match self.func_type {
+            FuncType::Int => Type::get_i32(),
+            FuncType::Void => Type::get_unit(),
+        };
         let func = program.new_func(FunctionData::new_decl(
             format!("@{}", self.ident),
-            Vec::new(),
-            Type::get_i32(),
+            params_ty,
+            return_ty,
         ));
         scope.function = Some(func);
         scope.global.function.insert(self.ident.as_str(), func);
-
+        
         let entry = new_bb!(program, scope).basic_block(Some("%entry".into()));
         add_bb_to_program!(program, scope, entry);
         scope.set_bb(entry);
+        scope.enter_scope();
+        for param in &self.params {
+            let p = new_value!(program, scope).alloc(btype_to_ir_type(param.btype));
+            curr_func_mut!(program, scope)
+                .dfg_mut()
+                .set_value_name(p, Some(format!("@{}", param.ident)));
+            // let p_var = new_value!(program, scope).alloc(btype_to_ir_type(param.btype));
+            // curr_func_mut!(program, scope)
+            //     .dfg_mut()
+            //     .set_value_name(p_var, Some(format!("%{}", param.ident)));
+            // let store = new_value!(program, scope).store(p, p_var);
+            push_insts!(program, scope, p);
+            dbg!(curr_func_mut!(program, scope).dfg().value(p));
+            let id = param.ident.as_str();
+            scope.add(&id, SymbolValue::Variable(p))?;
+        }
 
         self.block.generate(program, scope)?;
+        scope.exit_scope();
         Ok(())
     }
 }
@@ -398,8 +435,7 @@ impl Generate for Stmt {
                 let while_body =
                     new_bb!(program, scope).basic_block(Some("%while_body".to_string()));
                 add_bb_to_program!(program, scope, while_body);
-                let while_end =
-                    new_bb!(program, scope).basic_block(Some("%while_end".to_string()));
+                let while_end = new_bb!(program, scope).basic_block(Some("%while_end".to_string()));
                 add_bb_to_program!(program, scope, while_end);
 
                 scope.enter_loop(while_cond, while_end);
@@ -426,7 +462,7 @@ impl Generate for Stmt {
                 push_insts!(program, scope, jump);
 
                 let bb = new_bb!(program, scope).basic_block(Some("%after_break".to_string()));
-                add_bb_to_program!(program,scope,bb);
+                add_bb_to_program!(program, scope, bb);
                 scope.set_bb(bb);
                 Ok(())
             }
@@ -436,7 +472,7 @@ impl Generate for Stmt {
                 push_insts!(program, scope, jump);
 
                 let bb = new_bb!(program, scope).basic_block(Some("%after_continue".to_string()));
-                add_bb_to_program!(program,scope,bb);
+                add_bb_to_program!(program, scope, bb);
                 scope.set_bb(bb);
                 Ok(())
             }
@@ -709,7 +745,10 @@ impl Generate for UnaryExp {
                         push_insts!(program, scope, call);
                         Ok(SymbolValue::Variable(call))
                     }
-                    None => Err(Undefined(format!("Function Undefined: {:?}", func_call.ident))),
+                    None => Err(Undefined(format!(
+                        "Function Undefined: {:?}",
+                        func_call.ident
+                    ))),
                 }
             }
         }

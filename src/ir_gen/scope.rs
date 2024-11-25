@@ -48,6 +48,10 @@ impl<'ast> Scope<'ast> {
         }
     }
 
+    pub fn reset_symbol_table(&mut self) {
+        self.symbol_tables.clear();
+    }
+
     pub fn is_curr_scope_exist(&self, k: &'ast str) -> bool {
         self.symbol_tables.last().unwrap().contains_key(k)
     }

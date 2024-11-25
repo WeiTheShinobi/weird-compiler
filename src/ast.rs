@@ -64,7 +64,7 @@ pub struct ConstDecl {
     pub defs: Vec<ConstDef>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BType {
     Int,
 }
