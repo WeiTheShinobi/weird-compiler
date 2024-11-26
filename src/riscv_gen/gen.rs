@@ -1,5 +1,6 @@
 use koopa::ir::{self, *};
 use std::{collections::HashMap, fs::File, io::Write, mem::transmute, vec};
+use std::fmt::format;
 
 macro_rules! write_inst {
     ($program:expr, $action: expr, $($values:expr), *) => {
@@ -319,7 +320,20 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
         ValueKind::Jump(jump) => {
             let target_bb_name = bb_name!(func_data, jump.target());
             write_inst!(program, "j", target_bb_name);
-        }
+        },
+        ValueKind::FuncArgRef(arg) => {
+            // args on reg a0 ~ a7
+            // if len(args) > 8 => on stack
+            // sp + 0 => 9
+            // sp + n => 10 ...
+            if arg.index() <= 7 {
+                let pos = format!("a{}", arg.index());
+                cx.set_symbol(value, AsmValue::Value(pos));
+                // write_inst!(program, )
+            } else {
+
+            }
+        },
         _ => unimplemented!("{:?}", value_data),
     }
 }
