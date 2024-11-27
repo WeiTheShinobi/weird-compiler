@@ -195,7 +195,7 @@ impl Generate for FuncDef {
             let p_var = new_value!(program, scope).alloc(ty);
             curr_func_mut!(program, scope)
                 .dfg_mut()
-                .set_value_name(p_var, Some(format!("%{}", name.clone())));
+                .set_value_name(p_var, Some(format!("%{}", name)));
             let store = new_value!(program, scope).store(param, p_var);
             let load = new_value!(program, scope).load(p_var);
             push_insts!(program, scope, p_var, store, load);
