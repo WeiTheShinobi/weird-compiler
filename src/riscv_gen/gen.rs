@@ -1,5 +1,6 @@
 use koopa::ir::{self, *};
 use std::{collections::HashMap, fs::File, io::Write, mem::transmute, vec};
+use std::cmp::max;
 use std::fmt::format;
 use crate::riscv_gen::context::Context;
 
@@ -57,13 +58,21 @@ impl Program {
 pub(crate) enum AsmValue {
     Const(i32),
     Value(String),
+    Register(String),
 }
 
 impl AsmValue {
-    fn load_to(&self, program: &mut Program, reg: &str) {
+    fn load_to(&self, program: &mut Program, reg: &str) -> String {
         match self {
-            AsmValue::Const(int) => write_inst!(program, "li", reg, int),
-            AsmValue::Value(pos) => write_inst!(program, "lw", reg, pos),
+            AsmValue::Const(int) => {
+                write_inst!(program, "li", reg, int);
+                reg.to_string()
+            }
+            AsmValue::Value(pos) => {
+                write_inst!(program, "lw", reg, pos);
+                reg.to_string()
+            }
+            AsmValue::Register(r) => { r.to_string() }
         }
     }
 }
@@ -129,7 +138,9 @@ fn stack_size(ty: &Type) -> usize {
 }
 
 fn calculate_stack_size(function_data: &FunctionData) -> usize {
-    let mut size = 20; // TODO tmp
+    let mut has_func_call = false;
+    let mut max_func_args_len = 0;
+    let mut size = 0;
     for (&_bb, node) in function_data.layout().bbs() {
         for &inst in node.insts().keys() {
             let value_data = function_data.dfg().value(inst);
@@ -137,9 +148,21 @@ fn calculate_stack_size(function_data: &FunctionData) -> usize {
                 ValueKind::Alloc(_) => size += stack_size(value_data.ty()),
                 ValueKind::Load(_) => size += stack_size(value_data.ty()),
                 ValueKind::Binary(_) => size += stack_size(value_data.ty()),
+                ValueKind::Call(call) => {
+                    has_func_call = true;
+                    max_func_args_len = max(max_func_args_len, call.args().len());
+                }
                 _ => (),
             }
         }
+    }
+    size += if has_func_call {
+        4
+    } else {
+        0
+    };
+    if max_func_args_len > 8 {
+        size += (max_func_args_len - 8) * 4;
     }
     if size % 16 == 0 {
         size
@@ -253,7 +276,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             if let None = cx.get_symbol(&store.value()) {
                 emit(func_data, store.value(), program, cx);
             }
-            cx.get_symbol(&store.value())
+            let source_pos = cx.get_symbol(&store.value())
                 .unwrap()
                 .clone()
                 .load_to(program, "t0");
@@ -262,7 +285,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 emit(func_data, store.dest(), program, cx);
             }
             if let AsmValue::Value(dest) = cx.get_symbol(&store.dest()).unwrap().clone() {
-                write_inst!(program, "sw", "t0", dest);
+                write_inst!(program, "sw", source_pos, dest);
             }
         }
         ValueKind::Call(call) => {
@@ -286,7 +309,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             // save return value
             let return_val_pos = cx.get_useful_space(stack_size(&value_data.ty()));
 
-            if !value_data.ty().is_unit()  {
+            if !value_data.ty().is_unit() {
                 write_inst!(program, "sw","a0", return_val_pos);
             }
             cx.symbol_table.insert(value, AsmValue::Value(return_val_pos));
@@ -297,8 +320,8 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 if let None = cx.get_symbol(&ret_val) {
                     emit(func_data, ret_val, program, cx);
                 }
-                cx.get_symbol(&ret_val).unwrap().load_to(program, "a0")
-            }
+                cx.get_symbol(&ret_val).unwrap().load_to(program, "a0");
+            };
             epilogue(program, cx);
             write_inst!(program, "ret");
         }
@@ -327,9 +350,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             // sp + n => 10 ...
             if arg.index() <= 7 {
                 let pos = format!("a{}", arg.index());
-                let stack_pos = cx.get_useful_space(stack_size(value_data.ty()));
-                write_inst!(program, "sw",pos, stack_pos);
-                cx.set_symbol(value, AsmValue::Value(pos));
+                cx.set_symbol(value, AsmValue::Register(pos));
             } else {
                 // TODO
             }
