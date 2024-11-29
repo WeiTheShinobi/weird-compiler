@@ -1,8 +1,7 @@
-use koopa::ir::{self, *};
-use std::{collections::HashMap, fs::File, io::Write, mem::transmute, vec};
-use std::cmp::max;
-use std::fmt::format;
 use crate::riscv_gen::context::Context;
+use koopa::ir::{self, *};
+use std::cmp::max;
+use std::{fs::File, io::Write};
 
 macro_rules! write_inst {
     ($program:expr, $action: expr, $($values:expr), *) => {
@@ -28,7 +27,15 @@ macro_rules! write_inst {
 
 macro_rules! bb_name {
     ($func_data: expr, $bb: expr) => {
-        $func_data.dfg().bb($bb).name().clone().unwrap().chars().skip(1).collect::<String>()
+        $func_data
+            .dfg()
+            .bb($bb)
+            .name()
+            .clone()
+            .unwrap()
+            .chars()
+            .skip(1)
+            .collect::<String>()
     };
 }
 
@@ -38,9 +45,7 @@ pub struct Program {
 
 impl Program {
     pub fn new(file: File) -> Program {
-        Program {
-            writer: file,
-        }
+        Program { writer: file }
     }
 
     #[rustfmt::skip]
@@ -72,7 +77,7 @@ impl AsmValue {
                 write_inst!(program, "lw", reg, pos);
                 reg.to_string()
             }
-            AsmValue::Register(r) => { r.to_string() }
+            AsmValue::Register(r) => r.to_string(),
         }
     }
 }
@@ -107,8 +112,11 @@ impl GenerateAsm for ir::Program {
 
 impl GenerateAsm for FunctionData {
     fn generate(&self, program: &mut Program, cx: &mut Context) {
-        let stack_size = calculate_stack_size(self);
+        let (stack_size, has_func_call) = calculate_stack_size(self);
         cx.stack_size = stack_size;
+        if has_func_call {
+            cx.ra_pos = Some(stack_size - 4);
+        }
 
         let mut is_first_block = true;
         prologue(program, &cx);
@@ -137,7 +145,7 @@ fn stack_size(ty: &Type) -> usize {
     }
 }
 
-fn calculate_stack_size(function_data: &FunctionData) -> usize {
+fn calculate_stack_size(function_data: &FunctionData) -> (usize, bool) {
     let mut has_func_call = false;
     let mut max_func_args_len = 0;
     let mut size = 0;
@@ -145,29 +153,25 @@ fn calculate_stack_size(function_data: &FunctionData) -> usize {
         for &inst in node.insts().keys() {
             let value_data = function_data.dfg().value(inst);
             match value_data.kind() {
-                ValueKind::Alloc(_) => size += stack_size(value_data.ty()),
-                ValueKind::Load(_) => size += stack_size(value_data.ty()),
-                ValueKind::Binary(_) => size += stack_size(value_data.ty()),
                 ValueKind::Call(call) => {
                     has_func_call = true;
                     max_func_args_len = max(max_func_args_len, call.args().len());
+                    size += stack_size(value_data.ty());
                 }
-                _ => (),
+                _ => size += stack_size(value_data.ty()),
             }
         }
     }
-    size += if has_func_call {
-        4
-    } else {
-        0
-    };
     if max_func_args_len > 8 {
         size += (max_func_args_len - 8) * 4;
     }
+    if has_func_call {
+        size += 4;
+    }
     if size % 16 == 0 {
-        size
+        (size, has_func_call)
     } else {
-        size + 16 - (size % 16)
+        (size + 16 - (size % 16), has_func_call)
     }
 }
 fn prologue(program: &mut Program, cx: &Context) {
@@ -182,6 +186,9 @@ fn prologue(program: &mut Program, cx: &Context) {
         program.write(format!("  li t0, -{}", cx.stack_size).as_str());
         program.write("  add sp, sp, t0");
     }
+    if let Some(ra_pos) = cx.ra_pos {
+        write_inst!(program, "sw", "ra", format!("{}(sp)", ra_pos));
+    }
     program.newline();
 }
 
@@ -190,6 +197,10 @@ fn epilogue(program: &mut Program, cx: &Context) {
         return;
     }
     program.write("  # epilogue");
+
+    if let Some(ra_pos) = cx.ra_pos {
+        write_inst!(program, "lw", "ra", format!("{}(sp)", ra_pos));
+    }
     // addi -> 2^12 [-2048, 2047]
     if cx.stack_size < 2047 {
         write_inst!(program, "addi", "sp", "sp", cx.stack_size);
@@ -253,19 +264,19 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 _ => unimplemented!("op: {}", binary.op()),
             }
 
-            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+            let pos = cx.get_stack_space(stack_size(value_data.ty()));
             program.write(format!("  sw t0, {}", pos).as_str());
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Alloc(_) => {
             write_inst!(program, "# alloc");
-            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+            let pos = cx.get_stack_space(stack_size(value_data.ty()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Load(load) => {
             write_inst!(program, "# load");
             cx.get_symbol(&load.src()).unwrap().load_to(program, "t0");
-            let pos = cx.get_useful_space(stack_size(value_data.ty()));
+            let pos = cx.get_stack_space(stack_size(value_data.ty()));
 
             write_inst!(program, "sw", "t0", &pos);
             cx.set_symbol(value, AsmValue::Value(pos));
@@ -276,7 +287,8 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             if let None = cx.get_symbol(&store.value()) {
                 emit(func_data, store.value(), program, cx);
             }
-            let source_pos = cx.get_symbol(&store.value())
+            let source_pos = cx
+                .get_symbol(&store.value())
                 .unwrap()
                 .clone()
                 .load_to(program, "t0");
@@ -289,7 +301,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             }
         }
         ValueKind::Call(call) => {
-            write_inst!(program ,"# call");
+            write_inst!(program, "# call");
 
             for (i, arg) in call.args().iter().enumerate() {
                 if let None = cx.get_symbol(arg) {
@@ -300,19 +312,21 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                     cx.get_symbol(arg).unwrap().load_to(program, pos.as_str());
                 } else {
                     let arg_data = func_data.dfg().value(*arg);
-                    let pos = cx.get_useful_space(stack_size(arg_data.ty()));
+                    let pos = cx.get_stack_space(stack_size(arg_data.ty()));
                     cx.get_symbol(arg).unwrap().load_to(program, pos.as_str());
                 }
             }
+
             let callee = cx.function_table.get(&call.callee()).unwrap();
             write_inst!(program, format!("call {}", callee));
             // save return value
-            let return_val_pos = cx.get_useful_space(stack_size(&value_data.ty()));
-
+            let return_val_pos = cx.get_stack_space(stack_size(&value_data.ty()));
             if !value_data.ty().is_unit() {
-                write_inst!(program, "sw","a0", return_val_pos);
+                write_inst!(program, "sw", "a0", return_val_pos);
             }
-            cx.symbol_table.insert(value, AsmValue::Value(return_val_pos));
+
+            cx.symbol_table
+                .insert(value, AsmValue::Value(return_val_pos));
         }
         ValueKind::Return(ret) => {
             write_inst!(program, "# return");
@@ -322,11 +336,12 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 }
                 cx.get_symbol(&ret_val).unwrap().load_to(program, "a0");
             };
+
             epilogue(program, cx);
             write_inst!(program, "ret");
         }
         ValueKind::Branch(branch) => {
-            write_inst!(program ,"# branch");
+            write_inst!(program, "# branch");
             if let None = cx.get_symbol(&branch.cond()) {
                 emit(func_data, branch.cond(), program, cx);
             }
@@ -343,7 +358,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             write_inst!(program, "j", target_bb_name);
         }
         ValueKind::FuncArgRef(arg) => {
-            write_inst!(program , format!("# func arg ref index: {}", arg.index()));
+            write_inst!(program, format!("# func arg ref index: {}", arg.index()));
             // args on reg a0 ~ a7
             // if len(args) > 8 => on stack
             // sp + 0 => 9
