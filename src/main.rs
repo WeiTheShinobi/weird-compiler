@@ -65,7 +65,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
             let koopa = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
-            riscv_gen::generate_riscv(koopa, output_file);
+            riscv_gen::generate_riscv(koopa, output_file).map_err(Error::RiscvGen)?;
             Ok(())
         }
         _ => {
@@ -180,6 +180,7 @@ mod test {
         test_koopa!(break1);
         test_koopa!(continue1);
         test_koopa!(function1);
+        test_koopa!(global_var1);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -212,5 +213,6 @@ mod test {
         test_riscv!(break1);
         test_riscv!(continue1);
         test_riscv!(function1);
+        test_riscv!(global_var1);
     }
 }

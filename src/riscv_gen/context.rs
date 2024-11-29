@@ -33,7 +33,7 @@ impl Context {
         self.stack_used_size += size;
 
         assert!(
-            self.stack_used_size <= self.stack_size - 4,
+            self.stack_used_size <= self.stack_size,
             "used size: {}, stack size: {}",
             self.stack_used_size,
             self.stack_size

@@ -100,7 +100,10 @@ impl GenerateAsm for ir::Program {
         for &func in self.func_layout() {
             let func_data = self.func(func);
             let func_name = cx.function_table.get(&func).unwrap();
-
+            // skip buildin declare function
+            if let None = func_data.layout().entry_bb() {
+                continue;
+            }
             program.write("  .text");
             program.write(format!("  .globl {}", func_name).as_str());
             program.write(format!("{}:", func_name).as_str());

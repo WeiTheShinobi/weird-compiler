@@ -143,11 +143,6 @@ impl Generate for CompUnit {
         Ok(())
     }
 }
-fn btype_to_ir_type(ty: BType) -> Type {
-    match ty {
-        BType::Int => Type::get_i32(),
-    }
-}
 
 fn param_to_ir_type(param: &FuncFParam) -> (Option<String>, Type) {
     match param.btype {
