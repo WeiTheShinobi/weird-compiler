@@ -1,14 +1,20 @@
 #[derive(Debug)]
 pub struct CompUnit {
     pub comp_unit: Box<Option<CompUnit>>,
-    pub func_def: FuncDef,
+    pub global: Global,
+}
+
+#[derive(Debug)]
+pub enum Global {
+    FuncDef(FuncDef),
+    Decl(Decl),
 }
 
 #[derive(Debug)]
 pub struct FuncDef {
-    pub func_type: FuncType,
-    pub params: Vec<FuncFParam>,
+    pub func_type: BType,
     pub ident: String,
+    pub params: Vec<FuncFParam>,
     pub block: Block,
 }
 
@@ -16,6 +22,15 @@ pub struct FuncDef {
 pub struct FuncFParam {
     pub btype: BType,
     pub ident: String,
+}
+
+impl FuncFParam {
+    pub fn check_type_legal(&self) {
+        match self.btype {
+            BType::Void => panic!("illegal type"),
+            _ => {},
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -47,6 +62,15 @@ pub struct VarDecl {
     pub defs: Vec<VarDef>,
 }
 
+impl VarDecl {
+    pub fn is_type_legal(&self) {
+        match self.btype {
+            BType::Void => panic!("illegal type"),
+            _ => {},
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum VarDef {
     Id(String),
@@ -64,9 +88,18 @@ pub struct ConstDecl {
     pub defs: Vec<ConstDef>,
 }
 
+impl ConstDecl {
+    pub fn is_type_legal(&self) {
+        match self.btype {
+            BType::Void => panic!("illegal type"),
+            _ => {},
+        }
+    }
+}
 #[derive(Debug, Clone, Copy)]
 pub enum BType {
     Int,
+    Void,
 }
 
 #[derive(Debug)]

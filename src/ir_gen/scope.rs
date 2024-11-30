@@ -50,21 +50,43 @@ impl<'ast> Scope<'ast> {
 
     pub fn reset_symbol_table(&mut self) {
         self.symbol_tables.clear();
+        self.function = None;
     }
 
     pub fn is_curr_scope_exist(&self, k: &'ast str) -> bool {
-        self.symbol_tables.last().unwrap().contains_key(k)
+        match self.symbol_tables.last() {
+            Some(map) => {
+                map.contains_key(k)
+            }
+            None => self.global.decl.contains_key(k)
+        }
     }
 
     pub fn add(&mut self, k: &'ast str, v: SymbolValue) -> Result<()> {
         let table = self.symbol_tables.last_mut().unwrap();
-        if let Some(_) =self.global.decl.get(k) {
-            return Err(Error::Redeclare(format!("name: {}", k)))
+        if let Some(_) = self.global.decl.get(k) {
+            return Err(Error::Redeclare(format!("name: {}", k)));
         }
         if let Some(already_exist) = table.insert(k, v) {
             match already_exist {
                 SymbolValue::NeedLoad(_) => Ok(()),
-                SymbolValue::Value(_) => Err(Error::ReassignConst(k.to_string())),
+                SymbolValue::Value(_) | SymbolValue::GlobalConst(_) => Err(Error::ReassignConst(k.to_string())),
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn add_global_decl(&mut self, k: &'ast str, v: SymbolValue) -> Result<()> {
+        for table in self.symbol_tables.iter() {
+            if let Some(_) = table.get(k) {
+                return Err(Error::Redeclare(format!("name: {}", k)));
+            }
+        }
+        if let Some(already_exist) = self.global.decl.insert(k, v) {
+            match already_exist {
+                SymbolValue::NeedLoad(_) => Ok(()),
+                SymbolValue::Value(_) | SymbolValue::GlobalConst(_) => Err(Error::ReassignConst(k.to_string())),
             }
         } else {
             Ok(())
@@ -77,6 +99,9 @@ impl<'ast> Scope<'ast> {
                 return Ok(*v);
             };
         }
+        if let Some(v) = self.global.decl.get(k) {
+            return Ok(*v);
+        };
         Err(Error::Undefined(format!("not found : {:?}", k)))
     }
 

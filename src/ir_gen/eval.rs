@@ -147,6 +147,7 @@ impl Evaluate for PrimaryExp {
                                 panic!("eval error, can't resolve symbol: {:?}", data);
                             }
                         }
+                        SymbolValue::GlobalConst(c) => Some(c),
                     }
                     Err(e) => panic!("{:?}", e),
                 }

@@ -509,6 +509,7 @@ dependencies = [
  "koopa",
  "lalrpop",
  "lalrpop-util",
+ "log",
 ]
 
 [[package]]

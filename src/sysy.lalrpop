@@ -9,11 +9,20 @@ match {
     _
 }
 
-pub CompUnit: CompUnit = <comp_unit: CompUnit?> <func_def: FuncDef> => CompUnit{ comp_unit: Box::new(comp_unit), func_def };
+pub CompUnit: CompUnit = <comp_unit: CompUnit?> <global: Global> => 
+    CompUnit{ comp_unit: Box::new(comp_unit), global };
+
+Global: Global = {
+    <func_def: FuncDef> => Global::FuncDef(<>),
+    <decl: Decl> => Global::Decl(<>),
+};
 
 FuncDef: FuncDef = {
-    <func_type: FuncType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => {
+    <func_type: BType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => {
         FuncDef{ <> }
+    },
+    <func_type: BType> <ident: Ident> "(" ")" <block: Block> => {
+        FuncDef{ func_type, ident, params: vec![], block }
     }
 };
 
@@ -23,19 +32,14 @@ FuncFParam: FuncFParam = <btype: BType> <ident: Ident> => FuncFParam{ <> };
 
 FuncRParams: Vec<Exp> = <params: VectorValue<Exp>> => <>;
 
-FuncType: FuncType = {
-    "void" => FuncType::Void,
-    "int" => FuncType::Int,
-}
-
 Decl: Decl = {
     <decl: ConstDecl> => Decl::ConstDecl(decl),
     <decl: VarDecl> => Decl::VarDecl(decl),
 };
 
-ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValueAtLeast1<ConstDef>> ";" => ConstDecl{ <> };
+ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValue<ConstDef>> ";" => ConstDecl{ <> };
 
-VarDecl: VarDecl = <btype: BType> <defs: VectorValueAtLeast1<VarDef>> ";" => VarDecl{ <> };
+VarDecl: VarDecl = <btype: BType> <defs: VectorValue<VarDef>> ";" => VarDecl{ <> };
 
 VarDef: VarDef = {
     <id: Ident> => VarDef::Id(<>), 
@@ -44,23 +48,17 @@ VarDef: VarDef = {
 
 InitVal: InitVal = <exp: Exp> => InitVal{ <> };
 
-VectorValueAtLeast1<T>: Vec<T> = {
-    <mut v:(<T>)+> <mut e: ("," <T>)*> => {
-        v.append(&mut e);
-        v
-    }
-};
-
 VectorValue<T>: Vec<T> = {
-    <mut v:(<T>)?> <mut e: ("," <T>)*> => {
-        if let Some(v) = v {
-            e.insert(0, v);
-        }
+    <v: T> <mut e: ("," <T>)*> => {
+        e.insert(0, v);
         e
     }
 };
 
-BType: BType = "int" => BType::Int;
+BType: BType = {
+    "int" => BType::Int,
+    "void" => BType::Void,
+};
 
 ConstDef: ConstDef = <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef{ <> };
 
@@ -147,7 +145,7 @@ AddOp: AddOp = {
 };
 
 MulExp: MulExp = {
-     <exp:UnaryExp> =>  MulExp::UnaryExp(exp),
+     <exp:UnaryExp> => MulExp::UnaryExp(exp),
      <mul_exp: MulExp> <op: MulOp> <unary_exp: UnaryExp> => MulExp::MulAndUnary(Box::new(mul_exp), op, unary_exp)
 }
 
@@ -166,9 +164,9 @@ PrimaryExp: PrimaryExp = {
 UnaryExp: UnaryExp = {
     <p:PrimaryExp> => UnaryExp::PrimaryExp(p),
     <op:UnaryOp> <u:UnaryExp> => UnaryExp::UnaryOp(op, Box::new(u)),
-     <ident: Ident> "(" <args: FuncRParams> ")" => {
-       UnaryExp::Call(FuncCall { ident, args })
-     },
+    <ident: Ident> "(" <args: FuncRParams> ")" => {
+        UnaryExp::Call(FuncCall { ident, args })
+    },
 };
 
 UnaryOp: UnaryOp = {

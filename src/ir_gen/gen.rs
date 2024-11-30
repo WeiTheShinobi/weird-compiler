@@ -1,9 +1,6 @@
-use std::fmt::format;
-use std::panic::panic_any;
-
 use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BasicBlock, BinaryOp, Function, FunctionData, Program, Type, TypeKind, Value, ValueKind};
-
+use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
+use koopa::ir::builder::GlobalInstBuilder;
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
 use crate::ir_gen::Error::Undefined;
@@ -58,18 +55,19 @@ macro_rules! push_insts {
 pub enum SymbolValue {
     NeedLoad(Value),
     Value(Value),
+    GlobalConst(i32),
 }
 
 impl SymbolValue {
     pub fn into_value(self, program: &mut Program, scope: &mut Scope) -> Value {
         match self {
             SymbolValue::NeedLoad(value) => {
-                dbg!(curr_func_mut!(program, scope).dfg().value(value));
                 let v = new_value!(program, scope).load(value);
                 push_insts!(program, scope, v);
                 v
             }
             SymbolValue::Value(value) => value,
+            SymbolValue::GlobalConst(value) => new_value!(program, scope).integer(value),
         }
     }
 }
@@ -134,11 +132,12 @@ impl Generate for CompUnit {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        dbg!(&self.func_def);
+        dbg!(&self.global);
         if let Some(ref comp_unit) = *self.comp_unit {
+            scope.reset_symbol_table();
             comp_unit.generate(program, scope)?
         }
-        self.func_def.generate(program, scope)?;
+        self.global.generate(program, scope)?;
         scope.reset_symbol_table();
         Ok(())
     }
@@ -147,6 +146,18 @@ impl Generate for CompUnit {
 fn param_to_ir_type(param: &FuncFParam) -> (Option<String>, Type) {
     match param.btype {
         BType::Int => (Some(format!("@{}", param.ident.clone())), Type::get_i32()),
+        BType::Void => panic!("illegal type"),
+    }
+}
+
+impl Generate for Global {
+    type Out = ();
+
+    fn generate<'ast>(&'ast self, program: &mut Program, scope: &mut Scope<'ast>) -> Result<Self::Out> {
+        match self {
+            Global::FuncDef(func) => func.generate(program, scope),
+            Global::Decl(decl) => decl.generate(program, scope),
+        }
     }
 }
 
@@ -158,14 +169,15 @@ impl Generate for FuncDef {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
+        self.params.iter().for_each(|p| p.check_type_legal());
         let params_ty = self
             .params
             .iter()
             .map(param_to_ir_type)
             .collect();
         let return_ty = match self.func_type {
-            FuncType::Int => Type::get_i32(),
-            FuncType::Void => Type::get_unit(),
+            BType::Int => Type::get_i32(),
+            BType::Void => Type::get_unit(),
         };
         let func = program.new_func(FunctionData::with_param_names(
             format!("@{}", self.ident),
@@ -259,8 +271,10 @@ impl Generate for VarDecl {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
+        self.is_type_legal();
         let return_type = match self.btype {
             BType::Int => Type::get_i32(),
+            BType::Void => unreachable!("should check type"),
         };
         for def in &self.defs {
             let return_type = return_type.clone();
@@ -270,13 +284,23 @@ impl Generate for VarDecl {
                         return Err(Error::Redeclare(id.to_string()));
                     };
 
-                    let var = new_value!(program, scope).alloc(return_type);
-                    let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
-                    curr_func_mut!(program, scope)
-                        .dfg_mut()
-                        .set_value_name(zero_value, Some(format!("@{}", id)));
-                    scope.add(&id, SymbolValue::NeedLoad(zero_value))?;
-                    push_insts!(program, scope, var, zero_value);
+                    if scope.function.is_some() {
+                        let var = new_value!(program, scope).alloc(return_type);
+                        let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
+                        curr_func_mut!(program, scope)
+                            .dfg_mut()
+                            .set_value_name(zero_value, Some(format!("@{}", id)));
+                        scope.add(&id, SymbolValue::NeedLoad(zero_value))?;
+                        push_insts!(program, scope, var, zero_value);
+                    } else {
+                        let init = program.new_value().zero_init(return_type);
+                        let alloc = program.new_value().global_alloc(init);
+                        program.set_value_name(alloc, Some(format!("@{}", id)));
+                        scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
+
+                        // program.inst_layout().to_vec().extend([alloc]);
+
+                    }
                 }
                 VarDef::Assign(id, init_val) => {
                     if scope.is_curr_scope_exist(&id) {
@@ -309,6 +333,7 @@ impl Generate for ConstDecl {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
+        self.is_type_legal();
         match self.btype {
             BType::Int => {
                 for const_def in &self.defs {
@@ -316,6 +341,7 @@ impl Generate for ConstDecl {
                 }
                 Ok(())
             }
+            BType::Void => unreachable!("should check type")
         }
     }
 }
@@ -329,10 +355,18 @@ impl Generate for ConstDef {
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
         let r_val = self.const_init_val.generate(program, scope)?;
-        scope.add(
-            &self.ident,
-            SymbolValue::Value(new_value!(program, scope).integer(r_val)),
-        )
+        if scope.function.is_some() {
+            scope.add(
+                &self.ident,
+                SymbolValue::Value(new_value!(program, scope).integer(r_val)),
+            )
+        } else {
+            let v = program.new_value().integer(r_val);
+            scope.add_global_decl(
+                &self.ident,
+                SymbolValue::GlobalConst(r_val),
+            )
+        }
     }
 }
 
@@ -405,6 +439,7 @@ impl Generate for Stmt {
                         Ok(())
                     }
                     SymbolValue::Value(_) => Err(Error::ReassignConst(lval.ident.clone())),
+                    SymbolValue::GlobalConst(_) => Err(Error::ReassignConst(lval.ident.clone())),
                 }
             }
             Stmt::If(if_stmt) => {
@@ -555,7 +590,6 @@ impl Generate for LOrExp {
                 let not_eq2 = new_value!(program, scope).binary(BinaryOp::NotEq, rhs, zero);
                 let store_to_result2 = new_value!(program, scope).store(not_eq2, result);
                 let jump = new_value!(program, scope).jump(or_end);
-                // TODO: stack size %logic_result
                 push_insts!(program, scope, not_eq2, store_to_result2, jump);
 
                 scope.set_bb(or_end);
