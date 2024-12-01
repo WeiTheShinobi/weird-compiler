@@ -12,7 +12,7 @@ pub enum Global {
 
 #[derive(Debug)]
 pub struct FuncDef {
-    pub func_type: BType,
+    pub func_type: FuncType,
     pub ident: String,
     pub params: Vec<FuncFParam>,
     pub block: Block,
@@ -24,11 +24,24 @@ pub struct FuncFParam {
     pub ident: String,
 }
 
-impl FuncFParam {
-    pub fn check_type_legal(&self) {
-        match self.btype {
-            BType::Void => panic!("illegal type"),
-            _ => {},
+#[derive(Debug)]
+pub enum AllType {
+    Int,
+    Void,
+}
+
+impl AllType {
+    pub(crate) fn to_btype(&self) -> BType {
+        match self {
+            AllType::Int => BType::Int,
+            AllType::Void => panic!("cant use void as BType"),
+        }
+    }
+
+    pub(crate) fn to_func_type(&self) -> FuncType {
+        match self {
+            AllType::Int => FuncType::Int,
+            AllType::Void => FuncType::Void,
         }
     }
 }
@@ -62,15 +75,6 @@ pub struct VarDecl {
     pub defs: Vec<VarDef>,
 }
 
-impl VarDecl {
-    pub fn is_type_legal(&self) {
-        match self.btype {
-            BType::Void => panic!("illegal type"),
-            _ => {},
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum VarDef {
     Id(String),
@@ -88,18 +92,9 @@ pub struct ConstDecl {
     pub defs: Vec<ConstDef>,
 }
 
-impl ConstDecl {
-    pub fn is_type_legal(&self) {
-        match self.btype {
-            BType::Void => panic!("illegal type"),
-            _ => {},
-        }
-    }
-}
 #[derive(Debug, Clone, Copy)]
 pub enum BType {
     Int,
-    Void,
 }
 
 #[derive(Debug)]

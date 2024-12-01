@@ -146,7 +146,6 @@ impl Generate for CompUnit {
 fn param_to_ir_type(param: &FuncFParam) -> (Option<String>, Type) {
     match param.btype {
         BType::Int => (Some(format!("@{}", param.ident.clone())), Type::get_i32()),
-        BType::Void => panic!("illegal type"),
     }
 }
 
@@ -169,15 +168,14 @@ impl Generate for FuncDef {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        self.params.iter().for_each(|p| p.check_type_legal());
         let params_ty = self
             .params
             .iter()
             .map(param_to_ir_type)
             .collect();
         let return_ty = match self.func_type {
-            BType::Int => Type::get_i32(),
-            BType::Void => Type::get_unit(),
+            FuncType::Int => Type::get_i32(),
+            FuncType::Void => Type::get_unit(),
         };
         let func = program.new_func(FunctionData::with_param_names(
             format!("@{}", self.ident),
@@ -271,10 +269,8 @@ impl Generate for VarDecl {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        self.is_type_legal();
         let return_type = match self.btype {
             BType::Int => Type::get_i32(),
-            BType::Void => unreachable!("should check type"),
         };
         for def in &self.defs {
             let return_type = return_type.clone();
@@ -333,7 +329,6 @@ impl Generate for ConstDecl {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        self.is_type_legal();
         match self.btype {
             BType::Int => {
                 for const_def in &self.defs {
@@ -341,7 +336,7 @@ impl Generate for ConstDecl {
                 }
                 Ok(())
             }
-            BType::Void => unreachable!("should check type")
+            _ => unreachable!("should check type")
         }
     }
 }

@@ -17,18 +17,28 @@ Global: Global = {
     <decl: Decl> => Global::Decl(<>),
 };
 
+AllType: AllType = {
+    "int" => AllType::Int,
+    "void" => AllType::Void,
+};
+
 FuncDef: FuncDef = {
-    <func_type: BType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => {
+    <func_type: AllType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => {
+        let func_type = func_type.to_func_type();
         FuncDef{ <> }
     },
-    <func_type: BType> <ident: Ident> "(" ")" <block: Block> => {
+    <func_type: AllType> <ident: Ident> "(" ")" <block: Block> => {
+        let func_type = func_type.to_func_type();
         FuncDef{ func_type, ident, params: vec![], block }
     }
 };
 
 FuncFParams: Vec<FuncFParam> = <params: VectorValue<FuncFParam>> => <>;
 
-FuncFParam: FuncFParam = <btype: BType> <ident: Ident> => FuncFParam{ <> };
+FuncFParam: FuncFParam = <btype: AllType> <ident: Ident> => {
+    let btype = btype.to_btype();
+    FuncFParam{ <> }
+};
 
 FuncRParams: Vec<Exp> = <params: VectorValue<Exp>> => <>;
 
@@ -37,9 +47,15 @@ Decl: Decl = {
     <decl: VarDecl> => Decl::VarDecl(decl),
 };
 
-ConstDecl: ConstDecl = "const" <btype: BType> <defs: VectorValue<ConstDef>> ";" => ConstDecl{ <> };
+ConstDecl: ConstDecl = "const" <btype: AllType> <defs: VectorValue<ConstDef>> ";" => {
+    let btype = btype.to_btype();
+    ConstDecl{ <> }
+};
 
-VarDecl: VarDecl = <btype: BType> <defs: VectorValue<VarDef>> ";" => VarDecl{ <> };
+VarDecl: VarDecl = <btype: AllType> <defs: VectorValue<VarDef>> ";" => {
+    let btype = btype.to_btype();
+    VarDecl{ <> }
+};
 
 VarDef: VarDef = {
     <id: Ident> => VarDef::Id(<>), 
@@ -53,11 +69,6 @@ VectorValue<T>: Vec<T> = {
         e.insert(0, v);
         e
     }
-};
-
-BType: BType = {
-    "int" => BType::Int,
-    "void" => BType::Void,
 };
 
 ConstDef: ConstDef = <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef{ <> };
