@@ -64,6 +64,7 @@ pub(crate) enum AsmValue {
     Const(i32),
     Value(String),
     Register(String),
+    GlobalVar(String),
 }
 
 impl AsmValue {
@@ -78,6 +79,11 @@ impl AsmValue {
                 reg.to_string()
             }
             AsmValue::Register(r) => r.to_string(),
+            AsmValue::GlobalVar(label) => {
+                write_inst!(program, "la", reg, label);
+                write_inst!(program, "lw", reg, format!("0({})", reg));
+                reg.to_string()
+            }
         }
     }
 }
@@ -88,6 +94,35 @@ pub trait GenerateAsm {
 
 impl GenerateAsm for ir::Program {
     fn generate(&self, program: &mut Program, cx: &mut Context) {
+        for &global in self.inst_layout() {
+            let global_value = self.borrow_value(global);
+            let alloc_value = match &global_value.kind() {
+                ValueKind::GlobalAlloc(ga) => self.borrow_value(ga.init()),
+                _ => unreachable!("should only have global var"),
+            };
+            dbg!(&alloc_value);
+            let is_zero_init = matches!(alloc_value.kind(), ValueKind::ZeroInit(_));
+        
+            let value_name = global_value.name().clone().unwrap().replace("@", "");
+            if is_zero_init {
+                program.write("  .bss");
+            } else {
+                program.write("  .data");
+            }
+            cx.set_symbol(global, AsmValue::GlobalVar(value_name.clone()));
+            program.write(format!("  .globl {}", value_name).as_str());
+            program.write(format!("{}:", value_name).as_str());
+            if is_zero_init {
+                program.write("  .zero 4");
+            } else {
+                let val = match alloc_value.kind() {
+                    ValueKind::Integer(integer) => integer,
+                    _ => unreachable!(),
+                };
+                program.write(format!("  .word {}", val.value()).as_str());
+            }
+            program.newline();
+        }
         for &func in self.func_layout() {
             let func_data = self.func(func);
             let func_name = if func_data.name().starts_with("@") {

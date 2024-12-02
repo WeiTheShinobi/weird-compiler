@@ -1,9 +1,9 @@
-use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
-use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
-use koopa::ir::builder::GlobalInstBuilder;
 use crate::ast::*;
 use crate::ir_gen::scope::Scope;
 use crate::ir_gen::Error::Undefined;
+use koopa::ir::builder::GlobalInstBuilder;
+use koopa::ir::builder_traits::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder};
+use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, Value, ValueKind};
 
 use super::eval::Evaluate;
 use super::{Error, Result};
@@ -82,7 +82,8 @@ fn maybe_add_jump(program: &mut Program, scope: &mut Scope, jump_to: BasicBlock)
     {
         let last_inst = last_inst.clone();
         let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
-        if let ValueKind::Return(_) = last_inst_data.kind() {} else {
+        if let ValueKind::Return(_) = last_inst_data.kind() {
+        } else {
             let jmp = new_value!(program, scope).jump(jump_to);
             push_insts!(program, scope, jmp);
         }
@@ -97,7 +98,8 @@ fn maybe_add_return(program: &mut Program, scope: &mut Scope) {
         .layout_mut()
         .bb_mut(scope.curr_bb())
         .insts()
-        .back_key() {
+        .back_key()
+    {
         Some(last_inst) => last_inst.clone(),
         None => {
             let ret = new_value!(program, scope).ret(None);
@@ -108,7 +110,8 @@ fn maybe_add_return(program: &mut Program, scope: &mut Scope) {
 
     let last_inst = last_inst.clone();
     let last_inst_data = curr_func_mut!(program, scope).dfg().value(last_inst);
-    if let ValueKind::Return(_) = last_inst_data.kind() {} else {
+    if let ValueKind::Return(_) = last_inst_data.kind() {
+    } else {
         let ret = new_value!(program, scope).ret(None);
         push_insts!(program, scope, ret);
     }
@@ -152,7 +155,11 @@ fn param_to_ir_type(param: &FuncFParam) -> (Option<String>, Type) {
 impl Generate for Global {
     type Out = ();
 
-    fn generate<'ast>(&'ast self, program: &mut Program, scope: &mut Scope<'ast>) -> Result<Self::Out> {
+    fn generate<'ast>(
+        &'ast self,
+        program: &mut Program,
+        scope: &mut Scope<'ast>,
+    ) -> Result<Self::Out> {
         match self {
             Global::FuncDef(func) => func.generate(program, scope),
             Global::Decl(decl) => decl.generate(program, scope),
@@ -168,11 +175,7 @@ impl Generate for FuncDef {
         program: &mut Program,
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
-        let params_ty = self
-            .params
-            .iter()
-            .map(param_to_ir_type)
-            .collect();
+        let params_ty = self.params.iter().map(param_to_ir_type).collect();
         let return_ty = match self.func_type {
             FuncType::Int => Type::get_i32(),
             FuncType::Void => Type::get_unit(),
@@ -193,7 +196,7 @@ impl Generate for FuncDef {
 
         for i in 0..self.params.len() {
             let param = program.func(scope.function.unwrap()).params()[i].clone();
-            let data = curr_func_mut!(program,scope).dfg_mut().value(param);
+            let data = curr_func_mut!(program, scope).dfg_mut().value(param);
             let ty = data.ty().clone();
             let name = data.name().clone().unwrap();
             let name = name.trim_start_matches("@");
@@ -285,8 +288,7 @@ impl Generate for VarDecl {
                         let alloc = program.new_value().global_alloc(init);
                         program.set_value_name(alloc, Some(format!("@{}", id)));
                         scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
-
-                        // program.inst_layout().to_vec().extend([alloc]);
+                        program.inst_layout().to_vec().extend([alloc]);
                     } else {
                         let var = new_value!(program, scope).alloc(return_type);
                         let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
@@ -301,18 +303,28 @@ impl Generate for VarDecl {
                     if scope.is_curr_scope_exist(&id) {
                         return Err(Error::Redeclare(id.to_string()));
                     };
-                    let alloc = new_value!(program, scope).alloc(return_type);
-                    curr_func_mut!(program, scope)
-                        .dfg_mut()
-                        .set_value_name(alloc, Some(format!("@{}", id)));
+                    if scope.in_global_scope() {
+                        let v = init_val.exp.eval(program, scope).unwrap();
+                        let value = program.new_value().integer(v);
+                        let alloc = program.new_value().global_alloc(value);
+                        program.set_value_name(alloc, Some(format!("@{}", id)));
+                        scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
+                        program.inst_layout().to_vec().extend([alloc]);
+                    } else {
+                        let value = init_val
+                            .exp
+                            .generate(program, scope)?
+                            .into_value(program, scope);
 
-                    let value = init_val
-                        .exp
-                        .generate(program, scope)?
-                        .into_value(program, scope);
-                    let store_value = new_value!(program, scope).store(value, alloc);
-                    scope.add(&id, SymbolValue::NeedLoad(alloc))?;
-                    push_insts!(program, scope, alloc, store_value);
+                        let alloc = new_value!(program, scope).alloc(return_type);
+                        curr_func_mut!(program, scope)
+                            .dfg_mut()
+                            .set_value_name(alloc, Some(format!("@{}", id)));
+
+                        let store_value = new_value!(program, scope).store(value, alloc);
+                        scope.add(&id, SymbolValue::NeedLoad(alloc))?;
+                        push_insts!(program, scope, alloc, store_value);
+                    }
                 }
             }
         }
@@ -349,10 +361,7 @@ impl Generate for ConstDef {
     ) -> Result<Self::Out> {
         let r_val = self.const_init_val.generate(program, scope)?;
         if scope.in_global_scope() {
-            scope.add_global_decl(
-                &self.ident,
-                SymbolValue::GlobalConst(r_val),
-            )
+            scope.add_global_decl(&self.ident, SymbolValue::GlobalConst(r_val))
         } else {
             scope.add(
                 &self.ident,

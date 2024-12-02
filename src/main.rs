@@ -52,7 +52,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         .parse(&input)
         .map_err(|_| Error::Parse)?;
 
-    dbg!(input);
+    println!("\ninput source code:\n======================\n{}======================\n", input);
     match args.mode.as_str() {
         "-koopa" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
@@ -181,6 +181,7 @@ mod test {
         test_koopa!(continue1);
         test_koopa!(function1);
         test_koopa!(global_var1);
+        test_koopa!(buildin);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -214,5 +215,6 @@ mod test {
         test_riscv!(continue1);
         test_riscv!(function1);
         test_riscv!(global_var1);
+        test_riscv!(buildin);
     }
 }

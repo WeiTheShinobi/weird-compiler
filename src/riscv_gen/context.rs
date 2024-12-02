@@ -1,5 +1,5 @@
 use crate::riscv_gen::gen::AsmValue;
-use koopa::ir::{Function, Type, Value};
+use koopa::ir::{Function, Value};
 use std::collections::HashMap;
 
 pub struct Context {
