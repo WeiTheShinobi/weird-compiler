@@ -280,7 +280,14 @@ impl Generate for VarDecl {
                         return Err(Error::Redeclare(id.to_string()));
                     };
 
-                    if scope.function.is_some() {
+                    if scope.in_global_scope() {
+                        let init = program.new_value().zero_init(return_type);
+                        let alloc = program.new_value().global_alloc(init);
+                        program.set_value_name(alloc, Some(format!("@{}", id)));
+                        scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
+
+                        // program.inst_layout().to_vec().extend([alloc]);
+                    } else {
                         let var = new_value!(program, scope).alloc(return_type);
                         let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
                         curr_func_mut!(program, scope)
@@ -288,14 +295,6 @@ impl Generate for VarDecl {
                             .set_value_name(zero_value, Some(format!("@{}", id)));
                         scope.add(&id, SymbolValue::NeedLoad(zero_value))?;
                         push_insts!(program, scope, var, zero_value);
-                    } else {
-                        let init = program.new_value().zero_init(return_type);
-                        let alloc = program.new_value().global_alloc(init);
-                        program.set_value_name(alloc, Some(format!("@{}", id)));
-                        scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
-
-                        // program.inst_layout().to_vec().extend([alloc]);
-
                     }
                 }
                 VarDef::Assign(id, init_val) => {
@@ -336,7 +335,6 @@ impl Generate for ConstDecl {
                 }
                 Ok(())
             }
-            _ => unreachable!("should check type")
         }
     }
 }
@@ -350,16 +348,15 @@ impl Generate for ConstDef {
         scope: &mut Scope<'ast>,
     ) -> Result<Self::Out> {
         let r_val = self.const_init_val.generate(program, scope)?;
-        if scope.function.is_some() {
-            scope.add(
-                &self.ident,
-                SymbolValue::Value(new_value!(program, scope).integer(r_val)),
-            )
-        } else {
-            let v = program.new_value().integer(r_val);
+        if scope.in_global_scope() {
             scope.add_global_decl(
                 &self.ident,
                 SymbolValue::GlobalConst(r_val),
+            )
+        } else {
+            scope.add(
+                &self.ident,
+                SymbolValue::Value(new_value!(program, scope).integer(r_val)),
             )
         }
     }

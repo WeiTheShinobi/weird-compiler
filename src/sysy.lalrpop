@@ -27,10 +27,6 @@ FuncDef: FuncDef = {
         let func_type = func_type.to_func_type();
         FuncDef{ <> }
     },
-    <func_type: AllType> <ident: Ident> "(" ")" <block: Block> => {
-        let func_type = func_type.to_func_type();
-        FuncDef{ func_type, ident, params: vec![], block }
-    }
 };
 
 FuncFParams: Vec<FuncFParam> = <params: VectorValue<FuncFParam>> => <>;
@@ -65,9 +61,12 @@ VarDef: VarDef = {
 InitVal: InitVal = <exp: Exp> => InitVal{ <> };
 
 VectorValue<T>: Vec<T> = {
-    <v: T> <mut e: ("," <T>)*> => {
-        e.insert(0, v);
-        e
+    <mut v:(<T> ",")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
     }
 };
 

@@ -48,6 +48,10 @@ impl<'ast> Scope<'ast> {
         }
     }
 
+    pub fn in_global_scope(&self) -> bool {
+        self.function.is_none()
+    }
+
     pub fn reset_symbol_table(&mut self) {
         self.symbol_tables.clear();
         self.function = None;
