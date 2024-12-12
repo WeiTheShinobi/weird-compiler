@@ -1,29 +1,10 @@
 use crate::riscv_gen::context::Context;
+use crate::riscv_gen::inst::Inst;
+use koopa::front::ast::Error;
 use koopa::ir::{self, *};
 use std::cmp::max;
+use std::vec;
 use std::{fs::File, io::Write};
-
-macro_rules! write_inst {
-    ($program:expr, $action: expr, $($values:expr), *) => {
-        $program.write(
-            format!(
-                "  {} {}",
-                $action,
-                vec![$(format!("{}", $values)),+].join(", ")
-            )
-            .as_str(),
-        )
-    };
-    ($program:expr, $action: expr) => {
-        $program.write(
-            format!(
-                "  {}",
-                $action
-            )
-            .as_str(),
-        )
-    };
-}
 
 macro_rules! bb_name {
     ($func_data: expr, $bb: expr) => {
@@ -40,22 +21,30 @@ macro_rules! bb_name {
 }
 
 pub struct Program {
-    writer: File,
+    insts: Vec<Inst>,
 }
 
 impl Program {
-    pub fn new(file: File) -> Program {
-        Program { writer: file }
+    pub fn new() -> Program {
+        Program {
+            insts: vec![],
+        }
     }
 
-    #[rustfmt::skip]
-    fn write(&mut self, inst: &str) {
-        if let Err(e) = self.writer.write_all(inst.as_bytes()) {panic!("{:?}", e)}
-        if let Err(e) = self.writer.write_all("\n".as_bytes()) {panic!("{:?}", e)}
+    pub fn generate_on(self, mut file: File) -> Result<(), Error>{
+        for inst in self.insts {
+            if let Err(e) = file.write_all(inst.to_isa().as_bytes()) {panic!("{:?}", e)}
+            if let Err(e) = file.write_all("\n".as_bytes()) {panic!("{:?}", e)}
+        }
+        Ok(())
+    }
+
+    fn push_inst(&mut self, inst: Inst) {
+        self.insts.push(inst);
     }
 
     fn newline(&mut self) {
-        self.write("");
+        self.push_inst(Inst::NewLine);
     }
 }
 
@@ -68,20 +57,20 @@ pub(crate) enum AsmValue {
 }
 
 impl AsmValue {
-    fn load_to(&self, program: &mut Program, reg: &str) -> String {
+    fn load_to<'a>(&self, program: &'a mut Program, reg: &'a str) -> String {
         match self {
             AsmValue::Const(int) => {
-                write_inst!(program, "li", reg, int);
+                program.push_inst(Inst::Li(reg.to_string(), *int));
                 reg.to_string()
             }
             AsmValue::Value(pos) => {
-                write_inst!(program, "lw", reg, pos);
+                program.push_inst(Inst::Lw(reg.to_string(), pos.to_string()));
                 reg.to_string()
             }
             AsmValue::Register(r) => r.to_string(),
             AsmValue::GlobalVar(label) => {
-                write_inst!(program, "la", reg, label);
-                write_inst!(program, "lw", reg, format!("0({})", reg));
+                program.push_inst(Inst::La(reg.to_string(), label.to_string()));
+                program.push_inst(Inst::Lw(reg.to_string(), format!("0({})", reg)));
                 reg.to_string()
             }
         }
@@ -102,24 +91,24 @@ impl GenerateAsm for ir::Program {
             };
             dbg!(&alloc_value);
             let is_zero_init = matches!(alloc_value.kind(), ValueKind::ZeroInit(_));
-        
+
             let value_name = global_value.name().clone().unwrap().replace("@", "");
             if is_zero_init {
-                program.write("  .bss");
+                program.push_inst(Inst::Directive("  .bss".to_string()));
             } else {
-                program.write("  .data");
+                program.push_inst(Inst::Directive("  .data".to_string()));
             }
             cx.set_symbol(global, AsmValue::GlobalVar(value_name.clone()));
-            program.write(format!("  .globl {}", value_name).as_str());
-            program.write(format!("{}:", value_name).as_str());
+            program.push_inst(Inst::Directive(format!("  .globl {}", value_name)));
+            program.push_inst(Inst::Lable(format!("{}:", value_name)));
             if is_zero_init {
-                program.write("  .zero 4");
+                program.push_inst(Inst::Directive("  .zero 4".to_string()));
             } else {
                 let val = match alloc_value.kind() {
                     ValueKind::Integer(integer) => integer,
                     _ => unreachable!(),
                 };
-                program.write(format!("  .word {}", val.value()).as_str());
+                program.push_inst(Inst::Directive(format!("  .word {}", val.value())));
             }
             program.newline();
         }
@@ -139,9 +128,9 @@ impl GenerateAsm for ir::Program {
             if let None = func_data.layout().entry_bb() {
                 continue;
             }
-            program.write("  .text");
-            program.write(format!("  .globl {}", func_name).as_str());
-            program.write(format!("{}:", func_name).as_str());
+            program.push_inst(Inst::Directive("  .text".to_string()));
+            program.push_inst(Inst::Directive(format!("  .globl {}", func_name)));
+            program.push_inst(Inst::Directive(format!("{}:", func_name)));
             func_data.generate(program, cx);
             cx.clear()
         }
@@ -161,7 +150,7 @@ impl GenerateAsm for FunctionData {
         for (&bb, node) in self.layout().bbs() {
             if !is_first_block {
                 let bb_name = bb_name!(self, bb);
-                program.write(format!("{}:", bb_name).as_str());
+                program.push_inst(Inst::Lable(format!("{}:", bb_name)));
             } else {
                 is_first_block = false;
             }
@@ -216,16 +205,24 @@ fn prologue(program: &mut Program, cx: &Context) {
     if cx.stack_size == 0 {
         return;
     }
-    write_inst!(program, "# prolugue");
+    program.push_inst(Inst::Comment("# prolugue".to_string()));
     // addi -> 2^12 [-2048, 2047]
     if cx.stack_size < 2047 {
-        program.write(format!("  addi sp, sp, -{}", cx.stack_size).as_str());
+        program.push_inst(Inst::Addi(
+            "sp".to_string(),
+            "sp".to_string(),
+            -(cx.stack_size as i32),
+        ));
     } else {
-        program.write(format!("  li t0, -{}", cx.stack_size).as_str());
-        program.write("  add sp, sp, t0");
+        program.push_inst(Inst::Li("t0".to_string(), -(cx.stack_size as i32)));
+        program.push_inst(Inst::Add(
+            "sp".to_string(),
+            "sp".to_string(),
+            "t0".to_string(),
+        ));
     }
     if let Some(ra_pos) = cx.ra_pos {
-        write_inst!(program, "sw", "ra", format!("{}(sp)", ra_pos));
+        program.push_inst(Inst::Sw("ra".to_string(), format!("{}(sp)", ra_pos)));
     }
     program.newline();
 }
@@ -234,17 +231,25 @@ fn epilogue(program: &mut Program, cx: &Context) {
     if cx.stack_size == 0 {
         return;
     }
-    program.write("  # epilogue");
+    program.push_inst(Inst::Comment("  # epilogue".to_string()));
 
     if let Some(ra_pos) = cx.ra_pos {
-        write_inst!(program, "lw", "ra", format!("{}(sp)", ra_pos));
+        program.push_inst(Inst::Lw("ra".to_string(), format!("{}(sp)", ra_pos)));
     }
     // addi -> 2^12 [-2048, 2047]
     if cx.stack_size < 2047 {
-        write_inst!(program, "addi", "sp", "sp", cx.stack_size);
+        program.push_inst(Inst::Addi(
+            "sp".to_string(),
+            "sp".to_string(),
+            cx.stack_size as i32,
+        ));
     } else {
-        write_inst!(program, "li", "t0", cx.stack_size);
-        write_inst!(program, "add", "sp", "sp", "t0");
+        program.push_inst(Inst::Li("t0".to_string(), cx.stack_size as i32));
+        program.push_inst(Inst::Add(
+            "sp".to_string(),
+            "sp".to_string(),
+            "t0".to_string(),
+        ));
     }
 }
 
@@ -258,7 +263,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             cx.set_symbol(value, AsmValue::Const(imm));
         }
         ValueKind::Binary(binary) => {
-            program.write("  # binary");
+            program.push_inst(Inst::Comment("  # binary".to_string()));
             if let None = cx.get_symbol(&binary.lhs()) {
                 emit(func_data, binary.lhs(), program, cx);
             }
@@ -272,55 +277,95 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
 
             match binary.op() {
                 BinaryOp::Eq => {
-                    write_inst!(program, "sub", "t0", "t0", "t1");
-                    write_inst!(program, "seqz", "t0", "t0");
+                    program.push_inst(Inst::Sub(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Seqz("t0".to_string(), "t0".to_string()));
                 }
                 BinaryOp::NotEq => {
-                    write_inst!(program, "sub", "t0", "t0", "t1");
-                    write_inst!(program, "snez", "t0", "t0");
+                    program.push_inst(Inst::Sub(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Snez("t0".to_string(), "t0".to_string()));
                 }
-                BinaryOp::Sub => write_inst!(program, "sub", "t0", "t0", "t1"),
-                BinaryOp::Mul => write_inst!(program, "mul", "t0", "t0", "t1"),
-                BinaryOp::Add => write_inst!(program, "add", "t0", "t0", "t1"),
-                BinaryOp::Div => write_inst!(program, "div", "t0", "t0", "t1"),
+                BinaryOp::Sub => program.push_inst(Inst::Sub(
+                    "t0".to_string(),
+                    "t0".to_string(),
+                    "t1".to_string(),
+                )),
+                BinaryOp::Mul => program.push_inst(Inst::Mul(
+                    "t0".to_string(),
+                    "t0".to_string(),
+                    "t1".to_string(),
+                )),
+                BinaryOp::Add => program.push_inst(Inst::Add(
+                    "t0".to_string(),
+                    "t0".to_string(),
+                    "t1".to_string(),
+                )),
+                BinaryOp::Div => program.push_inst(Inst::Div(
+                    "t0".to_string(),
+                    "t0".to_string(),
+                    "t1".to_string(),
+                )),
                 BinaryOp::Gt => {
-                    write_inst!(program, "sgt", "t0", "t0", "t1");
-                    write_inst!(program, "snez", "t0", "t0");
+                    program.push_inst(Inst::Sgt(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Snez("t0".to_string(), "t0".to_string()));
                 }
                 BinaryOp::Lt => {
-                    write_inst!(program, "slt", "t0", "t0", "t1");
-                    write_inst!(program, "snez", "t0", "t0");
+                    program.push_inst(Inst::Slt(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Snez("t0".to_string(), "t0".to_string()));
                 }
                 BinaryOp::Ge => {
-                    write_inst!(program, "slt", "t0", "t0", "t1");
-                    write_inst!(program, "snez", "t0", "t0");
+                    program.push_inst(Inst::Slt(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Snez("t0".to_string(), "t0".to_string()));
                 }
                 BinaryOp::Le => {
-                    write_inst!(program, "sgt", "t0", "t0", "t1");
-                    write_inst!(program, "snez", "t0", "t0");
+                    program.push_inst(Inst::Sgt(
+                        "t0".to_string(),
+                        "t0".to_string(),
+                        "t1".to_string(),
+                    ));
+                    program.push_inst(Inst::Snez("t0".to_string(), "t0".to_string()));
                 }
                 _ => unimplemented!("op: {}", binary.op()),
             }
 
             let pos = cx.get_stack_space(stack_size(value_data.ty()));
-            program.write(format!("  sw t0, {}", pos).as_str());
+            program.push_inst(Inst::Sw("t0".to_string(), pos.clone()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Alloc(_) => {
-            write_inst!(program, "# alloc");
+            program.push_inst(Inst::Comment("# alloc".to_string()));
             let pos = cx.get_stack_space(stack_size(value_data.ty()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Load(load) => {
-            write_inst!(program, "# load");
+            program.push_inst(Inst::Comment("# load".to_string()));
             cx.get_symbol(&load.src()).unwrap().load_to(program, "t0");
             let pos = cx.get_stack_space(stack_size(value_data.ty()));
 
-            write_inst!(program, "sw", "t0", &pos);
+            program.push_inst(Inst::Sw("t0".to_string(), pos.clone()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Store(store) => {
-            write_inst!(program, "# store");
+            program.push_inst(Inst::Comment("# store".to_string()));
 
             if let None = cx.get_symbol(&store.value()) {
                 emit(func_data, store.value(), program, cx);
@@ -335,11 +380,11 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 emit(func_data, store.dest(), program, cx);
             }
             if let AsmValue::Value(dest) = cx.get_symbol(&store.dest()).unwrap().clone() {
-                write_inst!(program, "sw", source_pos, dest);
+                program.push_inst(Inst::Sw(source_pos.to_string(), dest.to_string()));
             }
         }
         ValueKind::Call(call) => {
-            write_inst!(program, "# call");
+            program.push_inst(Inst::Comment("# call".to_string()));
 
             for (i, arg) in call.args().iter().enumerate() {
                 if let None = cx.get_symbol(arg) {
@@ -356,18 +401,18 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             }
 
             let callee = cx.function_table.get(&call.callee()).unwrap();
-            write_inst!(program, format!("call {}", callee));
+            program.push_inst(Inst::Call(format!("call {}", callee)));
             // save return value
             let return_val_pos = cx.get_stack_space(stack_size(&value_data.ty()));
             if !value_data.ty().is_unit() {
-                write_inst!(program, "sw", "a0", return_val_pos);
+                program.push_inst(Inst::Sw("a0".to_string(), return_val_pos.to_string()));
             }
 
             cx.symbol_table
                 .insert(value, AsmValue::Value(return_val_pos));
         }
         ValueKind::Return(ret) => {
-            write_inst!(program, "# return");
+            program.push_inst(Inst::Comment("# return".to_string()));
             if let Some(ret_val) = ret.value() {
                 if let None = cx.get_symbol(&ret_val) {
                     emit(func_data, ret_val, program, cx);
@@ -376,10 +421,10 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             };
 
             epilogue(program, cx);
-            write_inst!(program, "ret");
+            program.push_inst(Inst::Ret);
         }
         ValueKind::Branch(branch) => {
-            write_inst!(program, "# branch");
+            program.push_inst(Inst::Comment("# branch".to_string()));
             if let None = cx.get_symbol(&branch.cond()) {
                 emit(func_data, branch.cond(), program, cx);
             }
@@ -388,15 +433,18 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
 
             let true_bb_name = bb_name!(func_data, branch.true_bb());
             let false_bb_name = bb_name!(func_data, branch.false_bb());
-            write_inst!(program, "bnez", "t0", true_bb_name);
-            write_inst!(program, "j", false_bb_name);
+            program.push_inst(Inst::Bnez("t0".to_string(), true_bb_name));
+            program.push_inst(Inst::J(false_bb_name));
         }
         ValueKind::Jump(jump) => {
             let target_bb_name = bb_name!(func_data, jump.target());
-            write_inst!(program, "j", target_bb_name);
+            program.push_inst(Inst::J(target_bb_name));
         }
         ValueKind::FuncArgRef(arg) => {
-            write_inst!(program, format!("# func arg ref index: {}", arg.index()));
+            program.push_inst(Inst::Comment(format!(
+                "# func arg ref index: {}",
+                arg.index()
+            )));
             // args on reg a0 ~ a7
             // if len(args) > 8 => on stack
             // sp + 0 => 9

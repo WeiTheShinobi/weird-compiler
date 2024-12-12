@@ -65,7 +65,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
             let koopa = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
-            riscv_gen::generate_riscv(koopa, output_file).map_err(Error::RiscvGen)?;
+            riscv_gen::generate_riscv(koopa).map_err(Error::RiscvGen)?.generate_on(output_file);
             Ok(())
         }
         _ => {
