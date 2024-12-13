@@ -20,7 +20,6 @@ fn main() {
     let input = args.next().unwrap();
     args.next();
     let output = args.next().unwrap();
-
     if let Err(err) = try_main(Args {
         mode,
         input,
@@ -52,7 +51,10 @@ fn try_main(args: Args) -> Result<(), Error> {
         .parse(&input)
         .map_err(|_| Error::Parse)?;
 
-    println!("\ninput source code:\n======================\n{}======================\n", input);
+    println!(
+        "\ninput source code:\n======================\n{}======================\n",
+        input
+    );
     match args.mode.as_str() {
         "-koopa" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
@@ -65,7 +67,9 @@ fn try_main(args: Args) -> Result<(), Error> {
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
             let koopa = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
-            riscv_gen::generate_riscv(koopa).map_err(Error::RiscvGen)?.generate_on(output_file);
+            riscv_gen::generate_riscv(koopa)
+                .map_err(Error::RiscvGen)?
+                .generate_on(output_file);
             Ok(())
         }
         _ => {
@@ -182,6 +186,7 @@ mod test {
         test_koopa!(function1);
         test_koopa!(global_var1);
         test_koopa!(buildin);
+        test_koopa!(peephole);
     }
     mod riscv {
         use crate::{try_main, Args};
@@ -216,5 +221,6 @@ mod test {
         test_riscv!(function1);
         test_riscv!(global_var1);
         test_riscv!(buildin);
+        test_riscv!(peephole);
     }
 }

@@ -21,7 +21,7 @@ macro_rules! bb_name {
 }
 
 pub struct Program {
-    insts: Vec<Inst>,
+    pub insts: Vec<Inst>,
 }
 
 impl Program {
