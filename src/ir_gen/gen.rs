@@ -290,13 +290,12 @@ impl Generate for VarDecl {
                         scope.add_global_decl(&id, SymbolValue::NeedLoad(alloc))?;
                         program.inst_layout().to_vec().extend([alloc]);
                     } else {
-                        let var = new_value!(program, scope).alloc(return_type);
-                        let zero_value = new_value!(program, scope).zero_init(Type::get_i32());
+                        let var: Value = new_value!(program, scope).alloc(return_type);
                         curr_func_mut!(program, scope)
                             .dfg_mut()
-                            .set_value_name(zero_value, Some(format!("@{}", id)));
-                        scope.add(&id, SymbolValue::NeedLoad(zero_value))?;
-                        push_insts!(program, scope, var, zero_value);
+                            .set_value_name(var, Some(format!("@{}", id)));
+                        scope.add(&id, SymbolValue::NeedLoad(var))?;
+                        push_insts!(program, scope, var);
                     }
                 }
                 VarDef::Assign(id, init_val) => {

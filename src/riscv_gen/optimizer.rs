@@ -61,6 +61,7 @@ pub fn peephole(mut program: Program) -> Program {
     program
 }
 
+#[cfg(test)]
 mod test {
     use std::cmp::max;
 

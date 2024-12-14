@@ -11,11 +11,13 @@ pub enum Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn generate_riscv<'a>(program: koopa::ir::Program) -> Result<Program> {
+pub fn generate_riscv<'a>(program: koopa::ir::Program, args: Vec<String>) -> Result<Program> {
     let mut riscv = gen::Program::new();
     let mut cx = Context::new();
     program.generate(&mut riscv, &mut cx);
 
-    riscv = optimizer::peephole(riscv);
+    if args.contains(&"-p".to_string()) {
+        riscv = optimizer::peephole(riscv);
+    }
     Ok(riscv)
 }

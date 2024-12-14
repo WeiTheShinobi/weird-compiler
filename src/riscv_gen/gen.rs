@@ -49,7 +49,7 @@ impl Program {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum AsmValue {
+pub enum AsmValue {
     Const(i32),
     Value(String),
     Register(String),
@@ -231,7 +231,7 @@ fn epilogue(program: &mut Program, cx: &Context) {
     if cx.stack_size == 0 {
         return;
     }
-    program.push_inst(Inst::Comment("  # epilogue".to_string()));
+    program.push_inst(Inst::Comment("# epilogue".to_string()));
 
     if let Some(ra_pos) = cx.ra_pos {
         program.push_inst(Inst::Lw("ra".to_string(), format!("{}(sp)", ra_pos)));
@@ -263,7 +263,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             cx.set_symbol(value, AsmValue::Const(imm));
         }
         ValueKind::Binary(binary) => {
-            program.push_inst(Inst::Comment("  # binary".to_string()));
+            program.push_inst(Inst::Comment("# binary".to_string()));
             if let None = cx.get_symbol(&binary.lhs()) {
                 emit(func_data, binary.lhs(), program, cx);
             }

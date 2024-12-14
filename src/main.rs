@@ -5,8 +5,8 @@ use std::fs::{read_to_string, File};
 
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
-use std::io;
 use std::process::exit;
+use std::{io, vec};
 
 mod ast;
 mod ir_gen;
@@ -20,10 +20,16 @@ fn main() {
     let input = args.next().unwrap();
     args.next();
     let output = args.next().unwrap();
+
+    let mut ss = vec![];
+    while let Some(arg) = args.next() {
+        ss.push(arg);
+    }
     if let Err(err) = try_main(Args {
         mode,
         input,
         output,
+        args: ss,
     }) {
         eprintln!("{}", err);
         exit(-1);
@@ -35,16 +41,9 @@ struct Args {
     mode: String,
     input: String,
     output: String,
+    args: Vec<String>,
 }
-impl Args {
-    fn new(mode: String, input: String, output: String) -> Args {
-        Args {
-            mode,
-            input,
-            output,
-        }
-    }
-}
+
 fn try_main(args: Args) -> Result<(), Error> {
     let input = read_to_string(args.input).map_err(Error::File)?;
     let ast = sysy::CompUnitParser::new()
@@ -67,7 +66,7 @@ fn try_main(args: Args) -> Result<(), Error> {
         "-riscv" => {
             let output_file = File::create(args.output).map_err(Error::File)?;
             let koopa = ir_gen::generate_program(&ast).map_err(Error::KoopaGen)?;
-            riscv_gen::generate_riscv(koopa)
+            let _ = riscv_gen::generate_riscv(koopa, args.args)
                 .map_err(Error::RiscvGen)?
                 .generate_on(output_file);
             Ok(())
@@ -113,11 +112,24 @@ mod test {
                 }
 
                 println!("start compile {}", &file_name);
-                let args = Args::new(
-                    "-koopa".to_string(),
-                    format!("{}{}{}", "./tests/input/", file_name, ".c"),
-                    format!("{}{}{}", "./tests/output/", file_name, ".koopa"),
-                );
+                let args = Args {
+                    mode: "-koopa".to_string(),
+                    input: format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    output: format!("{}{}{}", "./tests/output/", file_name, ".koopa"),
+                    args: vec!["-p".to_string()],
+                };
+                println!("koopa {}", file_name);
+                if let Err(e) = try_main(args) {
+                    panic!("{}", e.to_string());
+                }
+
+                let file_name_og = format!("{}_og", file_name);
+                let args = Args {
+                    mode: "-koopa".to_string(),
+                    input: format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    output: format!("{}{}{}", "./tests/output/", file_name_og, ".koopa"),
+                    args: vec!["-p".to_string()],
+                };
                 println!("koopa {}", file_name);
                 if let Err(e) = try_main(args) {
                     panic!("{}", e.to_string());
@@ -140,11 +152,24 @@ mod test {
                     fs::remove_file(&old_riscv).unwrap();
                 }
 
-                let args = Args::new(
-                    "-riscv".to_string(),
-                    format!("{}{}{}", "./tests/input/", file_name, ".c"),
-                    format!("{}{}{}", "./tests/output/", file_name, ".riscv"),
-                );
+                let args = Args {
+                    mode: "-riscv".to_string(),
+                    input: format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    output: format!("{}{}{}", "./tests/output/", file_name, ".riscv"),
+                    args: vec!["-p".to_string()],
+                };
+                println!("riscv {}", file_name);
+                if let Err(e) = try_main(args) {
+                    panic!("{}", e.to_string());
+                }
+
+                let file_name_og = format!("{}_og", file_name);
+                let args = Args {
+                    mode: "-riscv".to_string(),
+                    input: format!("{}{}{}", "./tests/input/", file_name, ".c"),
+                    output: format!("{}{}{}", "./tests/output/", file_name_og, ".riscv"),
+                    args: vec![],
+                };
                 println!("riscv {}", file_name);
                 if let Err(e) = try_main(args) {
                     panic!("{}", e.to_string());
