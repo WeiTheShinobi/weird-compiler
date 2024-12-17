@@ -2,6 +2,8 @@ use crate::riscv_gen::gen::AsmValue;
 use koopa::ir::{Function, Value};
 use std::collections::HashMap;
 
+use super::reg::{RegisterManager, Registers};
+
 pub struct Context {
     pub function_table: HashMap<Function, String>,
     // should clear below field when change function
@@ -9,6 +11,7 @@ pub struct Context {
     pub stack_used_size: usize,
     pub ra_pos: Option<usize>,
     pub symbol_table: HashMap<Value, AsmValue>,
+    pub register_manager: RegisterManager,
 }
 
 impl Context {
@@ -19,6 +22,7 @@ impl Context {
             stack_used_size: 0,
             ra_pos: None,
             symbol_table: HashMap::new(),
+            register_manager: RegisterManager::new(),
         }
     }
 
@@ -28,7 +32,7 @@ impl Context {
         self.symbol_table.clear();
     }
 
-    pub fn get_stack_space(&mut self, size: usize) -> String {
+    pub fn get_useful_space(&mut self, size: usize) -> String {
         let start_pos = self.stack_used_size;
         self.stack_used_size += size;
 

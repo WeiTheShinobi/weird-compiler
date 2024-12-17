@@ -347,19 +347,19 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                 _ => unimplemented!("op: {}", binary.op()),
             }
 
-            let pos = cx.get_stack_space(stack_size(value_data.ty()));
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
             program.push_inst(Inst::Sw("t0".to_string(), pos.clone()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Alloc(_) => {
             program.push_inst(Inst::Comment("# alloc".to_string()));
-            let pos = cx.get_stack_space(stack_size(value_data.ty()));
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
             cx.set_symbol(value, AsmValue::Value(pos));
         }
         ValueKind::Load(load) => {
             program.push_inst(Inst::Comment("# load".to_string()));
             cx.get_symbol(&load.src()).unwrap().load_to(program, "t0");
-            let pos = cx.get_stack_space(stack_size(value_data.ty()));
+            let pos = cx.get_useful_space(stack_size(value_data.ty()));
 
             program.push_inst(Inst::Sw("t0".to_string(), pos.clone()));
             cx.set_symbol(value, AsmValue::Value(pos));
@@ -395,7 +395,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
                     cx.get_symbol(arg).unwrap().load_to(program, pos.as_str());
                 } else {
                     let arg_data = func_data.dfg().value(*arg);
-                    let pos = cx.get_stack_space(stack_size(arg_data.ty()));
+                    let pos = cx.get_useful_space(stack_size(arg_data.ty()));
                     cx.get_symbol(arg).unwrap().load_to(program, pos.as_str());
                 }
             }
@@ -403,7 +403,7 @@ fn emit(func_data: &FunctionData, value: Value, program: &mut Program, cx: &mut 
             let callee = cx.function_table.get(&call.callee()).unwrap();
             program.push_inst(Inst::Call(format!("call {}", callee)));
             // save return value
-            let return_val_pos = cx.get_stack_space(stack_size(&value_data.ty()));
+            let return_val_pos = cx.get_useful_space(stack_size(&value_data.ty()));
             if !value_data.ty().is_unit() {
                 program.push_inst(Inst::Sw("a0".to_string(), return_val_pos.to_string()));
             }

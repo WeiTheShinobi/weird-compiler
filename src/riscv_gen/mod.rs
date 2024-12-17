@@ -5,6 +5,7 @@ mod context;
 mod gen;
 mod inst;
 mod optimizer;
+mod reg;
 
 #[derive(Debug)]
 pub enum Error {}

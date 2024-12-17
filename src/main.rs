@@ -11,6 +11,7 @@ use std::{io, vec};
 mod ast;
 mod ir_gen;
 mod riscv_gen;
+mod analysis;
 
 lalrpop_mod!(sysy);
 fn main() {
